@@ -6,7 +6,7 @@
 const TOOL_LABEL = {
   select: '選択', direct: 'ダイレクト選択', pen: 'ペン', pencil: '鉛筆', rect: '長方形', roundrect: '角丸長方形',
   ellipse: '楕円', polygon: '多角形', star: 'スター', line: '直線', text: '文字', eyedropper: 'スポイト', hand: '手のひら',
-  gradient: 'グラデーション', artboard: 'アートボード',
+  gradient: 'グラデーション', artboard: 'アートボード', shapebuilder: 'シェイプ形成',
 };
 
 function saveItems(items) { return items.map((it) => JSON.stringify(packItem(it))); }
@@ -737,6 +737,6 @@ function makeTools(app) {
     rect: new ShapeTool(app, 'rect'), roundrect: new ShapeTool(app, 'roundrect'), ellipse: new ShapeTool(app, 'ellipse'),
     polygon: new ShapeTool(app, 'polygon'), star: new ShapeTool(app, 'star'), line: new ShapeTool(app, 'line'),
     text: new TextTool(app), eyedropper: new EyedropperTool(app), hand: new HandTool(app),
-    gradient: new GradientTool(app), artboard: new ArtboardTool(app),
+    gradient: new GradientTool(app), artboard: new ArtboardTool(app), shapebuilder: new ShapeBuilderTool(app),
   };
 }

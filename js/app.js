@@ -212,9 +212,11 @@ class App {
   setTool(name) {
     if (!this.tools[name]) return;
     if (this.editing && name !== 'text') this.endTextEdit();
-    if (this.tool !== this.tools[name] && this.tool.deactivate) this.tool.deactivate();
+    const changed = this.tool !== this.tools[name];
+    if (changed && this.tool.deactivate) this.tool.deactivate();
     this.toolName = name;
     this.tool = this.tools[name];
+    if (changed && this.tool.activate) this.tool.activate();
     if (name !== 'direct' && name !== 'pen') this.anchorSel.clear();
     $('#stage').dataset.tool = name;
     this.panels.toolOptions();
@@ -615,7 +617,11 @@ class App {
         ['グループ', () => this.group()], ['グループ解除', () => this.ungroup()], null,
         ['最前面へ', () => this.arrange('front')], ['前面へ', () => this.arrange('forward')],
         ['背面へ', () => this.arrange('backward')], ['最背面へ', () => this.arrange('back')], null,
-        ['複合パスを作る', () => this.makeCompound()], ['クリッピングマスクを作る', () => this.makeClip()], ['クリッピングを解除', () => this.releaseClip()], null,
+        ['複合パスを作る', () => this.makeCompound()], ['複合パスを解除', () => this.releaseCompound()],
+        ['クリッピングマスクを作る', () => this.makeClip()], ['クリッピングを解除', () => this.releaseClip()], null,
+        ...Object.entries(PATHFINDER_LABELS).map(([k, l]) => [l, () => this.pathfinder(k)]), null,
+        ['パスのオフセット…', () => this.offsetDialog()], ['線のアウトライン', () => this.outlineStroke()],
+        ['連結', () => this.joinPaths()], ['パスの方向を反転', () => this.reversePaths()], null,
         ['ロック', () => this.lockSelection()], ['すべてのロックを解除', () => this.unlockAll()],
         ['隠す', () => this.hideSelection()], ['すべて表示', () => this.showAll()],
       ],
@@ -706,6 +712,7 @@ class App {
       const arrows = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
       if (arrows[k]) { const s = e.shiftKey ? 10 : 1; return run(() => this.nudge(arrows[k][0] * s, arrows[k][1] * s)); }
       if (k === 'o' && e.shiftKey) return run(() => this.setTool('artboard'));
+      if (k === 'm' && e.shiftKey) return run(() => this.setTool('shapebuilder'));
       const keys = { v: 'select', a: 'direct', p: 'pen', n: 'pencil', m: 'rect', l: 'ellipse', t: 'text', i: 'eyedropper', h: 'hand', g: 'gradient', '\\': 'line' };
       if (keys[k]) return run(() => this.setTool(keys[k]));
       if (k === 'x') return run(() => this.panels.setTarget(this.colorTarget === 'fill' ? 'stroke' : 'fill'));

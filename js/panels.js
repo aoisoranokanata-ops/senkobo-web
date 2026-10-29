@@ -18,10 +18,11 @@ const ICON = {
   eyedropper: '<path d="M14.5 4.5l5 5-2 2-1-1-7 7H6v-3.5l7-7-1-1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
   gradient: '<defs><linearGradient id="ig" x1="0" x2="1"><stop offset="0" stop-color="currentColor"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs><rect x="3.5" y="5.5" width="17" height="13" rx="1.5" fill="url(#ig)" stroke="currentColor" stroke-width="1.4"/>',
   artboard: '<path d="M7 3v18M17 3v18M3 7h18M3 17h18" stroke="currentColor" stroke-width="1.6" fill="none"/>',
+  shapebuilder: '<circle cx="9" cy="12" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="12" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 7.5a5.5 5.5 0 010 9 5.5 5.5 0 010-9z" fill="currentColor"/>',
   hand: '<path d="M8 12V6.5a1.5 1.5 0 013 0V11m0-5.5V5a1.5 1.5 0 013 0v6m0-4.5a1.5 1.5 0 013 0V14a7 7 0 01-7 7h-.6a6 6 0 01-4.9-2.6L4 15a1.6 1.6 0 012.6-1.8L8 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 const TOOL_ORDER = [['select', 'V'], ['direct', 'A'], ['pen', 'P'], ['pencil', 'N'], ['rect', 'M'], ['roundrect', ''], ['ellipse', 'L'],
-  ['polygon', ''], ['star', ''], ['line', '\\'], ['text', 'T'], ['gradient', 'G'], ['eyedropper', 'I'], ['artboard', 'Shift+O'], ['hand', 'H']];
+  ['polygon', ''], ['star', ''], ['line', '\\'], ['text', 'T'], ['shapebuilder', 'Shift+M'], ['gradient', 'G'], ['eyedropper', 'I'], ['artboard', 'Shift+O'], ['hand', 'H']];
 const FONTS = [['Yu Gothic', '游ゴシック（ヒラギノ角ゴ）'], ['Yu Mincho', '游明朝（ヒラギノ明朝）'], ['Meiryo', 'メイリオ'],
   ['BIZ UDPGothic', 'BIZ UDP ゴシック'], ['Noto Sans JP', 'Noto Sans JP'], ['Noto Serif JP', 'Noto Serif JP'],
   ['Hiragino Maru Gothic ProN', 'ヒラギノ丸ゴ'], ['Arial', 'Arial'], ['Helvetica', 'Helvetica'], ['Georgia', 'Georgia'],
@@ -128,6 +129,8 @@ class Panels {
     if (t === 'star') bar.append(num('点の数', 'points', 5, 2, 60, 1), num('内側の比率', 'starRatio', 0.5, 0.05, 0.95, 0.05), toggle('まっすぐ立てる', 'keepRatio'));
     if (t === 'gradient') bar.append(h('span', { class: 'opt-hint' }, `選んだ物の${app.colorTarget === 'fill' ? '塗り' : '線'}に、引っぱった向きでかける（Shift で 45° ごと）`));
     if (t === 'artboard') bar.append(toggle('上の絵も一緒に動かす', 'abMoveArt'), h('span', { class: 'opt-hint' }, '押して選ぶ・つかんで動かす・角や辺で大きさ'));
+    if (t === 'shapebuilder') bar.append(toggle('消すモード（Alt でも）', 'sbDelete', () => this.app.view.request()),
+      h('span', { class: 'opt-hint' }, 'なぞった領域を合体、消すモードでは押した領域を削除。押さなかった所は別々の形になります'));
     if (t === 'line') bar.append(h('span', { class: 'opt-hint' }, 'Shift で 45° ごと'));
     if (t === 'text') {
       const cur = this.selText();
@@ -199,6 +202,11 @@ class Panels {
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '不透明度'), this.opRange, this.opOut),
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '描画モード'), this.blendSel),
         this.buildEffects()),
+      sec('パスファインダー',
+        h('div', { class: 'grid3' }, Object.entries(PATHFINDER_LABELS).map(([k, l]) => act(l.replace('オブジェクトで', ''), () => app.pathfinder(k), l))),
+        h('div', { class: 'grid2' }, act('パスのオフセット…', () => app.offsetDialog()), act('線のアウトライン', () => app.outlineStroke()),
+          act('連結', () => app.joinPaths()), act('複合パスを解除', () => app.releaseCompound())),
+        h('p', { class: 'note' }, 'シェイプ形成ツール（Shift+M）で、重なった所をなぞって合体もできます')),
       sec('並べる',
         h('div', { class: 'grid3' }, ALIGN_BTNS.map(([k, l]) => act(l, () => app.align(k), l + '揃え'))),
         h('div', { class: 'grid2' }, act('横に等間隔', () => app.distribute('h')), act('縦に等間隔', () => app.distribute('v'))),

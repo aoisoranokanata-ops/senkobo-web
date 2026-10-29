@@ -160,10 +160,10 @@ class Renderer {
     if (x1 <= x0 || y1 <= y0) return;
     const dw = x1 - x0, dh = y1 - y0, down = Math.min(1, Math.sqrt(3e6 / (dw * dh)));
     const w = Math.max(1, Math.round(dw * down)), h = Math.max(1, Math.round(dh * down));
-    const src = newCanvas(w, h), sx = src.getContext('2d');
+    const blur = fx.filter((e) => e.type === 'blur').reduce((s, e) => s + (e.radius || 0), 0);
+    const src = newCanvas(w, h), sx = src.getContext('2d', { willReadFrequently: blur > 0 });
     sx.setTransform(t.a * down, t.b * down, t.c * down, t.d * down, (t.e - x0) * down, (t.f - y0) * down);
     this.draw(sx, it, 1);
-    const blur = fx.filter((e) => e.type === 'blur').reduce((s, e) => s + (e.radius || 0), 0);
     let shape = src;
     if (blur > 0) {
       const img = sx.getImageData(0, 0, w, h);

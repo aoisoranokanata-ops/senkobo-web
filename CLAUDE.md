@@ -5,7 +5,7 @@ Apple Pencil と指で、ロゴ・アイコン・イラスト・チラシを作�
 
 ## 方針
 - **ビルドなし・外部ライブラリなし**。`index.html` ＋ `css/app.css` ＋ `js/*.js`（**普通の script。module にしない**）。
-  各 js のトップレベル宣言はグローバルで共有される（読み込み順に注意: util → geom → model → text → render → snk → store → view → tools → panels → panels2 → app）。
+  各 js のトップレベル宣言はグローバルで共有される（読み込み順に注意: util → geom → model → text → render → boolean → snk → store → view → tools → panels → panels2 → app → shapeops）。
 - 公開は GitHub Pages（`aoisoranokanata-ops/senkobo-web`、ブランチ main）。iPad はローカル HTML を開けないため。
 - データは IndexedDB `senkobo-web`（作品ギャラリー）。localStorage のキーは `senkobo-web.` 始まり。
   Pages は他の PWA と同じオリジンなので、sw.js は**自分の接頭辞 `senkobo-web-` のキャッシュだけ**消す・参照する（install は cache:'reload'、skipWaiting）。
@@ -39,6 +39,14 @@ ICC・特色の分版（PDF の特色は名前だけ）。
   文字パネル（編集中に入力欄で範囲を選ぶと runs に）・グラデーション（パネルと G ツール）・縁取り（style.extra）・
   効果（影・外側/内側の光彩・ぼかし）・変形の数値（基準点・回転・反転）・アートボード（タブと Shift+O ツール）・SVG に効果のフィルター。
   Web で作った .snk を exe で開いて保存し直しても差 0（`webdoc_check.py`）、絵もほぼ同じ。
+- **フェーズ3 完了（v0.3.0、2026-10-29）**: boolean.js（自前の形の計算）。形を折れ線にして（元の区間と t を覚える）→ 交わりで切った
+  平面のグラフ → 面ごとに内外を調べる → 残す面の境目をつなぐ → 元の曲線から来た所は元の曲線の一部としてそのまま戻す（合体した円は 8 点）。
+  線を太らせる（線のアウトライン）・オフセットは区間の四角＋角の形＋端の形を全部合わせ、新しくできた境目だけ曲線を当てはめる（長い直線は直線のまま）。
+  shapeops.js: パスファインダー 6 種（exe と同じ: 合体・前面型抜き・交差・中マド・背面型抜き・分割、色の取り方も同じ）・パスのオフセット・
+  線のアウトライン・連結・複合パスの解除・パスの反転・シェイプ形成ツール（Shift+M、なぞって合体／消すモード）。
+  exe（skia-pathops）との突き合わせ: `tools/boolcases.js` を画面で eval → `python tools/boolean_check.py`。9 組×9 操作で面積が 0.6% 以内
+  （円の面積は Web の方が理論値に近い）。1 点で接する所は pathops が 8 の字の 1 輪、Web は 2 輪に分ける（数は違ってよい）。
+- 形の計算に文字は使えない（字の形を取り出せない。exe でアウトライン化してから）。
 - Web でまだ描かない物（dict には残るので exe で開けば元通り）: 可変幅の線（profile、フェーズ5 で `window.variableOutline` を作れば
   render.js がそれを使う）。フォントの OpenType 機能（kern 以外の features・palt）は使えない（canvas の制約）。
 - 文字の組み: 字は 100px のフォントで描き、大きさ・位置は字の行列 g.m に入れる。runs の番号は exe と同じコードポイント（cpIndex/u16Index）。
