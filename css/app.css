@@ -219,3 +219,7 @@ input[type=checkbox] { accent-color: var(--accent); width: 18px; height: 18px; m
 label.stack { display: flex; flex-direction: column; gap: 4px; color: var(--fg2); font-size: 12px; margin-bottom: 6px; }
 label.stack input { width: 100%; }
 #page-artboards .xywh { margin-bottom: 6px; }
+
+/* ---- フェーズ4 ---- */
+.g-sec { font-size: 15px; color: var(--fg2); margin: 28px 0 12px; font-weight: 600; }
+.card.tpl { border-style: dashed; }

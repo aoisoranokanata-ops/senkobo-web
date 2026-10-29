@@ -5,7 +5,7 @@ Apple Pencil と指で、ロゴ・アイコン・イラスト・チラシを作�
 
 ## 方針
 - **ビルドなし・外部ライブラリなし**。`index.html` ＋ `css/app.css` ＋ `js/*.js`（**普通の script。module にしない**）。
-  各 js のトップレベル宣言はグローバルで共有される（読み込み順に注意: util → geom → model → text → render → boolean → snk → store → view → tools → panels → panels2 → app → shapeops）。
+  各 js のトップレベル宣言はグローバルで共有される（読み込み順に注意: util → geom → model → text → render → boolean → outline → snk → pdf → store → view → tools → panels → panels2 → app → shapeops → guides → print）。
 - 公開は GitHub Pages（`aoisoranokanata-ops/senkobo-web`、ブランチ main）。iPad はローカル HTML を開けないため。
 - データは IndexedDB `senkobo-web`（作品ギャラリー）。localStorage のキーは `senkobo-web.` 始まり。
   Pages は他の PWA と同じオリジンなので、sw.js は**自分の接頭辞 `senkobo-web-` のキャッシュだけ**消す・参照する（install は cache:'reload'、skipWaiting）。
@@ -46,7 +46,15 @@ ICC・特色の分版（PDF の特色は名前だけ）。
   線のアウトライン・連結・複合パスの解除・パスの反転・シェイプ形成ツール（Shift+M、なぞって合体／消すモード）。
   exe（skia-pathops）との突き合わせ: `tools/boolcases.js` を画面で eval → `python tools/boolean_check.py`。9 組×9 操作で面積が 0.6% 以内
   （円の面積は Web の方が理論値に近い）。1 点で接する所は pathops が 8 の字の 1 輪、Web は 2 輪に分ける（数は違ってよい）。
-- 形の計算に文字は使えない（字の形を取り出せない。exe でアウトライン化してから）。
+- **フェーズ4 完了（v0.4.0、2026-10-29）**:
+  outline.js（文字のアウトライン: 字を 1em=400px で描いて濃さ 50% の等高線をなぞり、角で切って曲線を当てはめる。字ごとに覚える）。
+  これで形の計算・PDF に文字が使える（［アウトラインを作成］も）。字の形は端末のフォント（exe とは少し違うことがある）。
+  pdf.js（自前の PDF 書き出し: 書類の色のまま・特色は Separation・トンボはレジストレーション /All・Trim/BleedBox・
+  グラデーションはシェーディング・文字はアウトライン・効果は 300ppi の画像・K100 のオーバープリント・RGB 画像を CMYK に）。
+  guides.js（定規・ガイド・グリッド: exe と同じ doc.data.guides / grid / meta.guides_locked、定規から引く・定規へ戻すと消える、
+  グリッドにスナップ・ガイドにスナップ・マージンにガイド・トンボを作成）。print.js（PDF の設定・テンプレート: IndexedDB の作品に template:true）。
+  確認: 画面で web_*.pdf を作る（手順は tools/pdf_check.py の先頭）→ `python tools/pdf_check.py`（exe の PDF と描き比べ。sym 以外は差 1.5 以下、
+  sym は可変幅の線がまだ）。Acrobat 9 でも開けてエラーなし（2026-10-29）。
 - Web でまだ描かない物（dict には残るので exe で開けば元通り）: 可変幅の線（profile、フェーズ5 で `window.variableOutline` を作れば
   render.js がそれを使う）。フォントの OpenType 機能（kern 以外の features・palt）は使えない（canvas の制約）。
 - 文字の組み: 字は 100px のフォントで描き、大きさ・位置は字の行列 g.m に入れる。runs の番号は exe と同じコードポイント（cpIndex/u16Index）。

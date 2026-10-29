@@ -146,8 +146,9 @@ class Renderer {
     }
     ctx.restore();
   }
-  /** ぼかし・内側の光彩: 物を画素に描いてから作る */
-  drawRasterFx(ctx, it, a, fx) {
+  /** ぼかし・内側の光彩: 物を画素に描いてから作る。parts で描く部分を選べる（PDF: under=影・外側の光彩、item=物、over=内側の光彩） */
+  drawRasterFx(ctx, it, a, fx, parts = null) {
+    const P = (k) => !parts || parts.has(k);
     const b0 = itemVisualBBox(it);
     if (!b0) return;
     const rim = Math.max(0, ...((it.style && it.style.extra) || []).map((e) => e.width || 0)) / 2;
@@ -171,12 +172,14 @@ class Renderer {
       shape = newCanvas(w, h); shape.getContext('2d').putImageData(img, 0, 0);
     }
     const target = { cv: shape, x: x0, y: y0, w: dw, h: dh };
-    for (const e of fx) if (e.type === 'drop_shadow' || e.type === 'outer_glow') this.drawShadowed(ctx, it, a, e, target);
-    if (blur > 0) {
-      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha *= a; ctx.drawImage(shape, x0, y0, dw, dh); ctx.restore();
-    } else this.draw(ctx, it, a);
+    if (P('under')) for (const e of fx) if (e.type === 'drop_shadow' || e.type === 'outer_glow') this.drawShadowed(ctx, it, a, e, target);
+    if (P('item')) {
+      if (blur > 0) {
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha *= a; ctx.drawImage(shape, x0, y0, dw, dh); ctx.restore();
+      } else this.draw(ctx, it, a);
+    }
     for (const e of fx) {
-      if (e.type !== 'inner_glow') continue;
+      if (e.type !== 'inner_glow' || !P('over')) continue;
       // 形の外側を塗った物に影を付け、形の中だけ残す → 縁ほど強い光
       const inv = newCanvas(w, h), ix = inv.getContext('2d');
       ix.fillStyle = '#000'; ix.fillRect(0, 0, w, h);

@@ -5,6 +5,7 @@ const SETTINGS_DEFAULT = {
   snap: true, keepRatio: false, scaleStrokes: false, fingerDraws: true, pencilSmooth: 3, cornerRadius: 12,
   sides: 6, points: 5, starRatio: 0.5, font: 'Yu Gothic', fontSize: 24, fontStyle: '', vertical: false, panelTab: 'prop',
   panelOpen: true, textOnShapes: true, abMoveArt: true, refPoint: 'tl',
+  showRulers: false, showGuides: true, showGrid: false, snapGrid: false, gridFront: false,
 };
 
 class App {
@@ -60,6 +61,28 @@ class App {
           h('button', { class: 'card-more', title: 'その他', onclick: (e) => this.cardMenu(e.currentTarget, w) }, '⋯')));
       list.append(card);
     }
+    let tpls = [];
+    try { tpls = await Store.templates(); } catch { /* 無くてもよい */ }
+    const tl = $('#g-templates');
+    tl.textContent = '';
+    $('#g-tpl-head').hidden = !tpls.length;
+    for (const t of tpls) {
+      tl.append(h('div', { class: 'card tpl' },
+        h('button', { class: 'card-thumb', title: 'このテンプレートで新しく作る', onclick: () => this.newFromTemplate(t) }, t.thumb ? h('img', { src: t.thumb, alt: '' }) : ''),
+        h('div', { class: 'card-foot' }, h('div', { class: 'card-name' }, t.name), h('div', { class: 'card-date' }, 'テンプレート'),
+          h('button', { class: 'card-more', title: 'その他', onclick: (e) => this.popup(e.currentTarget, [
+            ['このテンプレートで新しく作る', () => this.newFromTemplate(t)],
+            ['テンプレートを直す（開く）', () => this.openWork(t.id)],
+            null,
+            ['削除', async () => { if (confirm(`テンプレート「${t.name}」を削除しますか？`)) { await Store.remove(t.id); this.refreshGallery(); } }, 'danger']]) }, '⋯'))));
+    }
+  }
+  async newFromTemplate(t) {
+    const doc = await Store.load(t.id);
+    doc.workId = null; doc.template = false; doc.undoStack = []; doc.redoStack = [];
+    doc.name = t.name + ' から'; doc.dirty = true;
+    await Store.save(doc, t.thumb);
+    this.openDoc(doc);
   }
   cardMenu(anchor, w) {
     this.popup(anchor, [
@@ -143,22 +166,41 @@ class App {
     const mode = h('select', {}, h('option', { value: 'rgb' }, 'RGB（画面・Web）'), h('option', { value: 'cmyk' }, 'CMYK（印刷）'));
     const count = h('input', { type: 'number', value: 1, min: 1, max: 50, step: 1, inputmode: 'numeric' });
     const name = h('input', { type: 'text', value: '名称未設定' });
+    const bleed = h('input', { type: 'number', value: 0, min: 0, step: 'any', inputmode: 'decimal' });
+    const margin = h('input', { type: 'number', value: 0, min: 0, step: 'any', inputmode: 'decimal' });
+    let templates = [];
+    try { templates = await Store.templates(); } catch { /* テンプレートが読めなくても新規は作れる */ }
+    const tpl = h('select', {}, h('option', { value: '' }, '使わない'), templates.map((t) => h('option', { value: t.id }, t.name)));
     presetSel.value = 'ロゴ（1000px）';
     const sync = () => {
       const p = PRESETS[presetSel.value];
       if (p) { w.value = p[0]; hh.value = p[1]; unit.value = p[2]; mode.value = p[3]; }
+      const print = mode.value === 'cmyk';
+      bleed.value = print ? 3 : 0;
+      margin.value = print ? (presetSel.value === '名刺' ? 3 : 5) : 0;
     };
     presetSel.addEventListener('change', sync);
     sync();
     const body = h('div', { class: 'form' },
       h('label', {}, '名前', name), h('label', {}, '用途', presetSel),
       h('div', { class: 'form-row' }, h('label', {}, '幅', w), h('label', {}, '高さ', hh), h('label', {}, '単位', unit)),
-      h('label', {}, 'カラー', mode), h('label', {}, 'アートボードの数', count));
+      h('label', {}, 'カラー', mode), h('label', {}, 'アートボードの数', count),
+      h('div', { class: 'form-row' }, h('label', {}, '裁ち落とし（mm）', bleed), h('label', {}, 'マージン（ガイド・mm）', margin)),
+      templates.length ? h('label', {}, '自分のテンプレート（選ぶと大きさはテンプレートのまま）', tpl) : null);
     const ok = await this.modal('新しい作品', body, [['キャンセル', false], ['作る', true, 'primary']]);
     if (!ok) return;
     const u = unit.value, W = parseFloat(w.value), H = parseFloat(hh.value);
     if (!(W > 0 && H > 0)) { toast('大きさが正しくありません'); return; }
-    const doc = Doc.create(W * PT_PER[u], H * PT_PER[u], mode.value, u, Math.max(1, Math.min(50, parseInt(count.value, 10) || 1)));
+    let doc;
+    if (tpl.value) {
+      doc = await Store.load(tpl.value);
+      doc.workId = null; doc.template = false; doc.undoStack = []; doc.redoStack = [];
+    } else {
+      doc = Doc.create(W * PT_PER[u], H * PT_PER[u], mode.value, u, Math.max(1, Math.min(50, parseInt(count.value, 10) || 1)));
+      doc.data.bleed = Math.max(0, parseFloat(bleed.value) || 0) * PT_PER.mm;
+      const mg = Math.max(0, parseFloat(margin.value) || 0) * PT_PER.mm;
+      if (mg > 0) addMarginGuides(doc, mg);
+    }
     doc.name = name.value.trim() || '名称未設定';
     doc.dirty = true;
     await Store.save(doc, await this.thumbnail(doc, 360, 'image/jpeg'));
@@ -557,10 +599,20 @@ class App {
     const units = h('select', {}, ['px', 'mm', 'pt', 'cm', 'in'].map((v) => h('option', { value: v }, v)));
     const bleed = h('input', { type: 'number', min: 0, step: 'any', inputmode: 'decimal', value: +((d.bleed || 0) / PT_PER[u]).toFixed(3) });
     mode.value = d.color_mode; units.value = u;
+    const g = d.grid || { size: 72 / 25.4 * 10, div: 4 };
+    const gsize = h('input', { type: 'number', min: 0.01, step: 'any', inputmode: 'decimal', value: +(g.size / PT_PER[u]).toFixed(3) });
+    const gdiv = h('input', { type: 'number', min: 1, max: 100, step: 1, inputmode: 'numeric', value: g.div || 4 });
     const body = h('div', { class: 'form' }, h('label', {}, 'カラー', mode), h('label', {}, '単位', units),
-      h('label', {}, `裁ち落とし（${u}）`, bleed), h('p', { class: 'note' }, 'カラーを変えても、塗ってある色はそのまま（新しく塗る色から変わります）。'));
+      h('label', {}, `裁ち落とし（${u}）`, bleed),
+      h('div', { class: 'form-row' }, h('label', {}, `グリッドの間隔（${u}）`, gsize), h('label', {}, '分割数', gdiv)),
+      h('p', { class: 'note' }, 'カラーを変えても、塗ってある色はそのまま（新しく塗る色から変わります）。'));
     if (!await this.modal('書類の設定', body, [['キャンセル', false], ['決定', true, 'primary']])) return;
-    this.doc.edit('書類の設定', () => { d.color_mode = mode.value; d.units = units.value; d.bleed = Math.max(0, parseFloat(bleed.value) || 0) * PT_PER[u]; this.doc.touch(); });
+    this.doc.edit('書類の設定', () => {
+      d.color_mode = mode.value; d.units = units.value; d.bleed = Math.max(0, parseFloat(bleed.value) || 0) * PT_PER[u];
+      d.grid = { size: Math.max(0.01, parseFloat(gsize.value) || 10) * PT_PER[u], div: Math.max(1, parseInt(gdiv.value, 10) || 4) };
+      this.doc.touch();
+    });
+    this.view.request();
     this.panels.refresh();
   }
 
@@ -603,7 +655,9 @@ class App {
         ['.snk で保存（線工房 exe と共通）', () => this.exportSnk()],
         ['SVG で書き出す', () => this.exportSvg()],
         ['PNG で書き出す', () => this.exportPng()],
+        ['PDF で書き出す（印刷用）', () => this.pdfDialog()],
         null,
+        ['テンプレートとして保存…', () => this.saveTemplate()],
         ['画像を配置', () => this.placeImage()],
         ['書類の設定', () => this.docSettings()],
       ],
@@ -622,6 +676,7 @@ class App {
         ...Object.entries(PATHFINDER_LABELS).map(([k, l]) => [l, () => this.pathfinder(k)]), null,
         ['パスのオフセット…', () => this.offsetDialog()], ['線のアウトライン', () => this.outlineStroke()],
         ['連結', () => this.joinPaths()], ['パスの方向を反転', () => this.reversePaths()], null,
+        ['アウトラインを作成（文字）', () => this.outlineText()], ['トンボを作成', () => this.makeCropMarks()], null,
         ['ロック', () => this.lockSelection()], ['すべてのロックを解除', () => this.unlockAll()],
         ['隠す', () => this.hideSelection()], ['すべて表示', () => this.showAll()],
       ],
@@ -630,7 +685,14 @@ class App {
         ['100%', () => this.view.setZoom(1)], ['選んだ物に合わせる', () => { const b = selectionBBox(this.selection()); if (b) this.view.fitRect(b, 60); }], null,
         ['アウトライン表示', () => { this.outlineMode = !this.outlineMode; this.view.request(); }, '', this.outlineMode],
         ['指でも描く（オフで指は画面の移動）', () => { this.settings.fingerDraws = !this.settings.fingerDraws; this.saveSettings(); }, '', this.settings.fingerDraws !== false],
-        ['スナップ', () => { this.settings.snap = !this.settings.snap; this.saveSettings(); this.panels.toolOptions(); }, '', this.settings.snap],
+        ['スナップ', () => { this.settings.snap = !this.settings.snap; this.saveSettings(); this.panels.toolOptions(); }, '', this.settings.snap], null,
+        ['定規', () => this.toggleView('showRulers'), '', this.settings.showRulers],
+        ['ガイドを表示', () => this.toggleView('showGuides'), '', this.settings.showGuides],
+        ['ガイドをロック', () => this.toggleGuidesLock(), '', !!(this.doc.data.meta && this.doc.data.meta.guides_locked)],
+        ['マージンにガイド…', () => this.marginGuidesDialog()], ['ガイドを消去', () => this.clearGuides()], null,
+        ['グリッドを表示', () => this.toggleView('showGrid'), '', this.settings.showGrid],
+        ['グリッドにスナップ', () => this.toggleView('snapGrid'), '', this.settings.snapGrid],
+        ['グリッドを前面に', () => this.toggleView('gridFront'), '', this.settings.gridFront],
       ],
     };
     void sel;
@@ -697,7 +759,12 @@ class App {
         if (k === 's') return run(() => { this.saveNow(); toast('保存しました', 900); });
         if (k === '0') return run(() => this.view.fitArtboard());
         if (k === '1') return run(() => this.view.setZoom(1));
-        if (k === '=' || k === '+' || k === ';') return run(() => this.view.setZoom(this.view.zoom * 1.25));
+        if (k === 'r') return run(() => this.toggleView('showRulers'));
+        if (k === ';') return run(() => this.toggleView('showGuides'));
+        if (k === "'" || k === '@') return run(() => this.toggleView('showGrid'));
+        if (k === 'p') return run(() => this.pdfDialog());
+        if (k === 'o' && e.shiftKey) return run(() => this.outlineText());
+        if (k === '=' || k === '+') return run(() => this.view.setZoom(this.view.zoom * 1.25));
         if (k === '-') return run(() => this.view.setZoom(this.view.zoom / 1.25));
         if (k === ']') return run(() => this.arrange(e.shiftKey ? 'front' : 'forward'));
         if (k === '[') return run(() => this.arrange(e.shiftKey ? 'back' : 'backward'));

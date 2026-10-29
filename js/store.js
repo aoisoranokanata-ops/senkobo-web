@@ -43,8 +43,14 @@ function req2p(rq) { return new Promise((res, rej) => { rq.onsuccess = () => res
 const Store = {
   async list() {
     const all = await tx('readonly', (st) => req2p(st.getAll()));
-    return (all || []).map((w) => ({ id: w.id, name: w.name, updated: w.updated, thumb: w.thumb }))
+    return (all || []).filter((w) => !w.template).map((w) => ({ id: w.id, name: w.name, updated: w.updated, thumb: w.thumb }))
       .sort((a, b) => b.updated - a.updated);
+  },
+  /** テンプレートとして保存した物（作品の一覧には出さない） */
+  async templates() {
+    const all = await tx('readonly', (st) => req2p(st.getAll()));
+    return (all || []).filter((w) => w.template).map((w) => ({ id: w.id, name: w.name, updated: w.updated, thumb: w.thumb }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   },
   async load(id) {
     const w = await tx('readonly', (st) => req2p(st.get(id)));
@@ -54,6 +60,7 @@ const Store = {
     const doc = new Doc(JSON.parse(w.doc), images);
     doc.workId = id;
     doc.name = w.name;
+    doc.template = !!w.template;
     return doc;
   },
   async save(doc, thumb) {
@@ -61,7 +68,7 @@ const Store = {
     const images = {};
     const used = new Set([...doc.iterTree()].filter((x) => x.kind === 'image').map((x) => x.image));
     for (const k of used) if (doc.images[k]) images[k] = doc.images[k].buffer.slice(doc.images[k].byteOffset, doc.images[k].byteOffset + doc.images[k].byteLength);
-    const rec = { id, name: doc.name || '名称未設定', updated: Date.now(), thumb, doc: JSON.stringify(doc.pack()), images };
+    const rec = { id, name: doc.name || '名称未設定', updated: Date.now(), thumb, doc: JSON.stringify(doc.pack()), images, template: !!doc.template };
     await tx('readwrite', (st) => req2p(st.put(rec)));
     doc.workId = id;
     return id;

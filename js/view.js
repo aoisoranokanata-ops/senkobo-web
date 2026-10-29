@@ -96,6 +96,12 @@ class View {
     }
     if (this.mode === 'pinch') return;
     const fingerPans = e.pointerType === 'touch' && (S.fingerDraws === false || this.app.toolName === 'hand');
+    const onRuler = S.showRulers && (lp.x < RULER || lp.y < RULER);
+    if ((onRuler || !fingerPans) && !this.app.space && this.app.guidePointerDown(e, lp)) {
+      this.mode = 'guide';
+      this.toolPointer = { id: e.pointerId, type: e.pointerType };
+      return;
+    }
     if (fingerPans || e.button === 1 || (e.pointerType === 'mouse' && this.app.space)) {
       this.mode = 'pan';
       this.gesture = { sx: lp.x, sy: lp.y, ox: this.ox, oy: this.oy, id: e.pointerId, moved: false };
@@ -132,6 +138,7 @@ class View {
       }
       return;
     }
+    if (this.mode === 'guide') { if (this.toolPointer && e.pointerId === this.toolPointer.id) this.app.guidePointerMove(lp); return; }
     if (this.mode === 'pan' && this.gesture && e.pointerId === this.gesture.id) {
       this.ox = this.gesture.ox + lp.x - this.gesture.sx;
       this.oy = this.gesture.oy + lp.y - this.gesture.sy;
@@ -168,6 +175,10 @@ class View {
       return;
     }
     if (this.mode === 'pan') { this.mode = null; this.gesture = null; return; }
+    if (this.mode === 'guide') {
+      if (this.toolPointer && e.pointerId === this.toolPointer.id) { this.mode = null; this.toolPointer = null; this.app.guidePointerUp(lp); }
+      return;
+    }
     if (this.mode === 'tool' && this.toolPointer && e.pointerId === this.toolPointer.id) {
       this.mode = null;
       this.toolPointer = null;
@@ -268,6 +279,7 @@ class View {
       ctx.fillRect(a.x, a.y, a.w, a.h);
     }
     this.app.renderer.outline = this.app.outlineMode;
+    if (this.app.settings.showGrid && !this.app.settings.gridFront) { ctx.save(); ctx.setTransform(d, 0, 0, d, 0, 0); this.paintGrid(ctx); ctx.restore(); }
     this.app.renderer.drawDoc(ctx);
     // ここからは画面の画素で（線を細く保つ）
     ctx.setTransform(d, 0, 0, d, 0, 0);
@@ -297,6 +309,8 @@ class View {
       }
       ctx.setLineDash([]);
     }
+    if (this.app.settings.showGrid && this.app.settings.gridFront) this.paintGrid(ctx);
+    if (this.app.settings.showGuides || this.tempGuide) this.paintGuides(ctx);
     this.paintSelection(ctx);
     if (this.app.editing) this.paintTextEdit(ctx);
     this.app.tool.paint && this.app.tool.paint(ctx);
@@ -304,6 +318,7 @@ class View {
       const [sx, sy] = this.toScreen(...this.snapMark);
       ctx.strokeStyle = '#ff3ca0'; ctx.strokeRect(sx - 4, sy - 4, 8, 8);
     }
+    if (this.app.settings.showRulers) this.paintRulers(ctx);
   }
   /** 文字の編集中: 選んでいる範囲を色で、カーソルを線で（入力欄の選択に合わせる） */
   paintTextEdit(ctx) {
@@ -438,6 +453,7 @@ class View {
 
   snap(x, y, exclude = new Set()) {
     this.snapMark = null;
+    if (this.app.settings.snapGrid) { const g = this.gridSnap(x, y); this.snapMark = g; return g; }
     if (!this.app.settings.snap) return [x, y];
     const t = this.tol(this.app.touchy ? 10 : 6);
     let best = null, bd = t;
@@ -451,6 +467,19 @@ class View {
       if (it.kind === 'path') for (const sp of it.paths) for (const n of sp.n) consider(n.x, n.y);
       const b = itemBBox(it);
       if (b) consider((b[0] + b[2]) / 2, (b[1] + b[3]) / 2);
+    }
+    // ガイド: 縦のガイドには x、横のガイドには y をそろえる
+    if (this.app.settings.showGuides) {
+      let gx = null, gy = null, dx = t, dy = t;
+      for (const g of this.doc.data.guides || []) {
+        if (g.o === 'v' && Math.abs(g.p - x) <= dx) { dx = Math.abs(g.p - x); gx = g.p; }
+        if (g.o === 'h' && Math.abs(g.p - y) <= dy) { dy = Math.abs(g.p - y); gy = g.p; }
+      }
+      if (gx != null || gy != null) {
+        const p = [gx ?? (best ? best[0] : x), gy ?? (best ? best[1] : y)];
+        this.snapMark = p;
+        return p;
+      }
     }
     if (best) { this.snapMark = best; return best; }
     return [x, y];

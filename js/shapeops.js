@@ -23,7 +23,6 @@ Object.assign(App.prototype, {
   shapeItems(min = 1) {
     const doc = this.doc;
     let items = sortByOrder(doc, topLevel(doc, this.selection()));
-    if (hasTextIn(doc, items)) toast('文字は形の計算に使えません（線工房 exe で「アウトラインを作成」すると使えます）', 4500);
     items = items.filter((it) => boolPaths(doc, it).length);
     if (items.length < min) { toast(min > 1 ? `パスを ${min} つ以上選んでください` : 'パスを選んでください'); return null; }
     return items;
@@ -93,7 +92,7 @@ Object.assign(App.prototype, {
     const doc = this.doc, sel = this.selection();
     const targets = [];
     for (const it of topLevel(doc, sel)) for (const x of doc.iterTree([it])) if (x.kind === 'path' && x.style.stroke && x.style.width > 0 && x.paths.length) targets.push(x);
-    if (!targets.length) { toast(hasTextIn(doc, sel) ? '文字の線はアウトラインにできません（exe で）' : '線のあるパスを選んでください'); return; }
+    if (!targets.length) { toast(hasTextIn(doc, sel) ? '文字の線は、先に［アウトラインを作成］してからにしてください' : '線のあるパスを選んでください'); return; }
     if (targets.some((p) => p.style.profile)) toast('可変幅の線は、今は同じ太さとして形にします', 4000);
     const out = [];
     doc.edit('線のアウトライン', () => {

@@ -429,6 +429,11 @@ function boolPaths(doc, it, m = null) {
       const sps = spsCopy(x.paths);
       if (mm) spsTransform(sps, mm);
       out.push({ item: x, sps, rule: x.fill_rule === 'evenodd' ? 'evenodd' : 'nonzero' });
+    } else if (x.kind === 'text') {
+      // 文字は字の形（outline.js）にして使う
+      const sps = textOutlinePaths(x).flatMap((p) => p.sps);
+      if (mm) spsTransform(sps, mm);
+      if (sps.length) out.push({ item: x, sps, rule: 'nonzero' });
     } else if (x.children) {
       const base = out.length;
       for (const c of x.children) walk(c, mm);
