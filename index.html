@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1e1e22">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="線工房">
+<title>線工房 Web</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="gallery" class="screen">
+  <header class="g-head">
+    <div class="g-title"><img src="icons/icon-192.png" alt=""><b>線工房</b><span class="g-sub">Web</span><span id="g-ver" class="g-ver"></span></div>
+    <span class="sp"></span>
+    <button id="g-open" class="btn">開く…</button>
+    <button id="g-new" class="btn primary">＋ 新しい作品</button>
+  </header>
+  <div id="g-list" class="cards"></div>
+  <div id="g-empty" class="g-empty" hidden>
+    <p>まだ作品がありません。</p>
+    <p>「＋ 新しい作品」で描き始めるか、「開く…」で線工房（exe）の <b>.snk</b> や画像を読み込めます。</p>
+    <p class="note">作品はこの端末のブラウザの中に自動で保存されます。大事な作品は .snk で書き出しておいてください。</p>
+  </div>
+</div>
+
+<div id="editor" class="screen" hidden>
+  <header id="topbar">
+    <button id="b-back" class="btn ghost" title="作品の一覧へ">‹ 作品</button>
+    <input id="doc-name" class="doc-name" spellcheck="false" autocomplete="off">
+    <button class="btn ghost" data-menu="file">ファイル</button>
+    <button class="btn ghost" data-menu="edit">編集</button>
+    <button class="btn ghost" data-menu="object">オブジェクト</button>
+    <span class="sp"></span>
+    <button id="b-undo" class="btn icon" title="取り消し（2 本指タップ）">↶</button>
+    <button id="b-redo" class="btn icon" title="やり直し（3 本指タップ）">↷</button>
+    <button id="zoom" class="btn ghost zoom" title="表示">100%</button>
+    <button id="b-panel" class="btn ghost" title="パネルの表示">パネル</button>
+  </header>
+  <div id="optbar"></div>
+  <div id="work">
+    <nav id="toolbar"></nav>
+    <div id="stage">
+      <canvas id="cv"></canvas>
+      <textarea id="textedit" hidden spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+      <div id="status"></div>
+    </div>
+    <aside id="panel">
+      <div class="tabs"><button data-tab="prop">プロパティ</button><button data-tab="layers">レイヤー</button></div>
+      <div class="page" id="page-prop" data-page="prop"></div>
+      <div class="page" id="page-layers" data-page="layers" hidden></div>
+    </aside>
+  </div>
+</div>
+
+<div id="veil" hidden></div>
+<div id="menu" class="popover" hidden></div>
+<div id="modal" hidden></div>
+<div id="update" hidden>新しい版があります <button id="update-btn" class="btn primary">再読み込み</button></div>
+<div id="toast"></div>
+
+<script src="js/util.js"></script>
+<script src="js/geom.js"></script>
+<script src="js/model.js"></script>
+<script src="js/render.js"></script>
+<script src="js/snk.js"></script>
+<script src="js/store.js"></script>
+<script src="js/view.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/panels.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
