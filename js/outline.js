@@ -100,8 +100,9 @@ function fitLoopCorners(pts, tol, r = 3, angleDeg = 38) {
 }
 
 /** RGBA の濃さ（a）の等高線 → 輪（画素の座標の点の並び） */
-function traceAlpha(data, w, h, T) {
-  const v = (x, y) => data[(y * w + x) * 4 + 3] / 255;
+function traceAlpha(data, w, h, T) { return traceField((x, y) => data[(y * w + x) * 4 + 3] / 255, w, h, T); }
+/** 画素の値 v(x, y)（0..1、画素の中心）の T の等高線 → 輪。外枠は 0 にしておくこと（輪が閉じる） */
+function traceField(v, w, h, T) {
   const segs = [];        // [edgeKeyA, edgeKeyB]
   const pos = new Map();  // edgeKey → [x, y]
   const ept = (kind, x, y) => {

@@ -27,7 +27,8 @@ Object.assign(Panels.prototype, {
       h('div', { class: 'row' }, h('span', { class: 'lbl' }, '回転'), this.tf.rot, h('span', { class: 'unit' }, '°'),
         act('↺90', () => app.transformSel(M.r(-90, ...this.refXY()), '回転')), act('↻90', () => app.transformSel(M.r(90, ...this.refXY()), '回転'))),
       h('div', { class: 'grid2' }, act('左右に反転', () => app.transformSel(M.s(-1, 1, ...this.refXY()), '反転')),
-        act('上下に反転', () => app.transformSel(M.s(1, -1, ...this.refXY()), '反転'))));
+        act('上下に反転', () => app.transformSel(M.s(1, -1, ...this.refXY()), '反転'))),
+      (this.cornerRow = h('div', { class: 'row' }, h('span', { class: 'lbl' }, '角の丸み'), (this.tf.corner = numInput({ min: 0, step: 1 }, (v) => app.setShapeCorner(Math.max(0, v)))), h('span', { class: 'unit' }, ''))));
   },
   refXY(b) {
     b = b || selectionBBox(this.app.selection()) || [0, 0, 0, 0];
@@ -52,6 +53,9 @@ Object.assign(Panels.prototype, {
     this.tfBox.hidden = !b;
     $$('button', this.refGrid).forEach((x) => x.classList.toggle('on', x.dataset.k === (this.app.settings.refPoint || 'tl')));
     if (!b) return;
+    const sh = sel.find((x) => x.kind === 'path' && x.shape && ['rect', 'polygon', 'star'].includes(x.shape.kind));
+    this.cornerRow.hidden = !sh;
+    if (sh) { setVal(this.tf.corner, r2((sh.shape.kind === 'rect' ? sh.shape.r || 0 : sh.shape.corner || 0) * M.scale(sh.shape_matrix || M.I()) / u)); this.cornerRow.lastChild.textContent = this.doc.data.units; }
     const [rx, ry] = this.refXY(b);
     setVal(this.tf.X, r2(rx / u)); setVal(this.tf.Y, r2(ry / u)); setVal(this.tf.W, r2((b[2] - b[0]) / u)); setVal(this.tf.H, r2((b[3] - b[1]) / u));
   },

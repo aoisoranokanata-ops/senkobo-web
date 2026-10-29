@@ -5,7 +5,7 @@ Apple Pencil と指で、ロゴ・アイコン・イラスト・チラシを作�
 
 ## 方針
 - **ビルドなし・外部ライブラリなし**。`index.html` ＋ `css/app.css` ＋ `js/*.js`（**普通の script。module にしない**）。
-  各 js のトップレベル宣言はグローバルで共有される（読み込み順に注意: util → geom → model → text → render → boolean → outline → snk → pdf → store → view → tools → panels → panels2 → app → shapeops → guides → print）。
+  各 js のトップレベル宣言はグローバルで共有される（読み込み順に注意: util → geom → model → text → render → boolean → outline → beyond → trace → snk → pdf → store → view → tools → panels → panels2 → app → shapeops → guides → print → beyondui）。
 - 公開は GitHub Pages（`aoisoranokanata-ops/senkobo-web`、ブランチ main）。iPad はローカル HTML を開けないため。
 - データは IndexedDB `senkobo-web`（作品ギャラリー）。localStorage のキーは `senkobo-web.` 始まり。
   Pages は他の PWA と同じオリジンなので、sw.js は**自分の接頭辞 `senkobo-web-` のキャッシュだけ**消す・参照する（install は cache:'reload'、skipWaiting）。
@@ -55,8 +55,13 @@ ICC・特色の分版（PDF の特色は名前だけ）。
   グリッドにスナップ・ガイドにスナップ・マージンにガイド・トンボを作成）。print.js（PDF の設定・テンプレート: IndexedDB の作品に template:true）。
   確認: 画面で web_*.pdf を作る（手順は tools/pdf_check.py の先頭）→ `python tools/pdf_check.py`（exe の PDF と描き比べ。sym 以外は差 1.5 以下、
   sym は可変幅の線がまだ）。Acrobat 9 でも開けてエラーなし（2026-10-29）。
-- Web でまだ描かない物（dict には残るので exe で開けば元通り）: 可変幅の線（profile、フェーズ5 で `window.variableOutline` を作れば
-  render.js がそれを使う）。フォントの OpenType 機能（kern 以外の features・palt）は使えない（canvas の制約）。
+- **フェーズ5 完了（v0.5.0、2026-10-29）**: beyond.js（exe の beyond.py・palette.py と同じ計算: 可変幅の線 variableOutline・
+  線幅の点・角丸 roundNodes・色を集める／塗り替える・バリエーション・アイコンの計画・.ico（PNG 入り）・配色の提案）、
+  trace.js（画像トレース: exe と同じプリセット・k-means は Lab・輪郭は traceField＋角で切って当てはめ）、beyondui.js（対称描画の開始／終了／再開／確定・
+  線幅ツール Shift+W・角を丸くする・再配色（キャンバスで見ながら）・バリエーション・アイコン一括書き出し（zip）・画像トレース・配色の提案）。
+  メニューは上の「超える」。図形（長方形・多角形・スター）は選択の欄に「角の丸み」。可変幅の線は PDF・SVG・線のアウトラインでも輪郭の形。
+  見本_対称と線幅も exe との絵の差 14.8 → 0.5。Web で作った対称・線幅の作品も exe で開いて保存し直しの差 0。
+- Web で使えない物（dict には残るので exe で開けば元通り）: フォントの OpenType 機能（features・palt）（canvas の制約）。
 - 文字の組み: 字は 100px のフォントで描き、大きさ・位置は字の行列 g.m に入れる。runs の番号は exe と同じコードポイント（cpIndex/u16Index）。
   縦書きの約物はフォントの vert の代わりに、句読点を右上へずらす・括弧と長音を 90° 寝かせる（V_SHIFT / V_ROTATE）。
 - 効果: iPad の Safari は ctx.filter が効かない。影・外側の光彩は shadow（速い）、ぼかし・内側の光彩は別 canvas に描いて

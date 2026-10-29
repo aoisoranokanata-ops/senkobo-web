@@ -19,10 +19,11 @@ const ICON = {
   gradient: '<defs><linearGradient id="ig" x1="0" x2="1"><stop offset="0" stop-color="currentColor"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs><rect x="3.5" y="5.5" width="17" height="13" rx="1.5" fill="url(#ig)" stroke="currentColor" stroke-width="1.4"/>',
   artboard: '<path d="M7 3v18M17 3v18M3 7h18M3 17h18" stroke="currentColor" stroke-width="1.6" fill="none"/>',
   shapebuilder: '<circle cx="9" cy="12" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="15" cy="12" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 7.5a5.5 5.5 0 010 9 5.5 5.5 0 010-9z" fill="currentColor"/>',
+  width: '<path d="M3 16c4-9 7 2 9-4s4-6 9-4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 18c4-8 6 1 8-3s5-6 9-4" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" opacity=".55"/>',
   hand: '<path d="M8 12V6.5a1.5 1.5 0 013 0V11m0-5.5V5a1.5 1.5 0 013 0v6m0-4.5a1.5 1.5 0 013 0V14a7 7 0 01-7 7h-.6a6 6 0 01-4.9-2.6L4 15a1.6 1.6 0 012.6-1.8L8 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 const TOOL_ORDER = [['select', 'V'], ['direct', 'A'], ['pen', 'P'], ['pencil', 'N'], ['rect', 'M'], ['roundrect', ''], ['ellipse', 'L'],
-  ['polygon', ''], ['star', ''], ['line', '\\'], ['text', 'T'], ['shapebuilder', 'Shift+M'], ['gradient', 'G'], ['eyedropper', 'I'], ['artboard', 'Shift+O'], ['hand', 'H']];
+  ['polygon', ''], ['star', ''], ['line', '\\'], ['text', 'T'], ['shapebuilder', 'Shift+M'], ['width', 'Shift+W'], ['gradient', 'G'], ['eyedropper', 'I'], ['artboard', 'Shift+O'], ['hand', 'H']];
 const FONTS = [['Yu Gothic', '游ゴシック（ヒラギノ角ゴ）'], ['Yu Mincho', '游明朝（ヒラギノ明朝）'], ['Meiryo', 'メイリオ'],
   ['BIZ UDPGothic', 'BIZ UDP ゴシック'], ['Noto Sans JP', 'Noto Sans JP'], ['Noto Serif JP', 'Noto Serif JP'],
   ['Hiragino Maru Gothic ProN', 'ヒラギノ丸ゴ'], ['Arial', 'Arial'], ['Helvetica', 'Helvetica'], ['Georgia', 'Georgia'],
@@ -131,6 +132,8 @@ class Panels {
     if (t === 'artboard') bar.append(toggle('上の絵も一緒に動かす', 'abMoveArt'), h('span', { class: 'opt-hint' }, '押して選ぶ・つかんで動かす・角や辺で大きさ'));
     if (t === 'shapebuilder') bar.append(toggle('消すモード（Alt でも）', 'sbDelete', () => this.app.view.request()),
       h('span', { class: 'opt-hint' }, 'なぞった領域を合体、消すモードでは押した領域を削除。押さなかった所は別々の形になります'));
+    if (t === 'width') bar.append(toggle('点を消すモード（Alt でも）', 'widthDelete'),
+      h('span', { class: 'opt-hint' }, '線の上を引っぱると、その所の太さが変わります。点をダブルタップで消す'));
     if (t === 'line') bar.append(h('span', { class: 'opt-hint' }, 'Shift で 45° ごと'));
     if (t === 'text') {
       const cur = this.selText();
@@ -196,7 +199,9 @@ class Panels {
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '線幅'), this.widthRange, this.widthNum, h('span', { class: 'unit' }, 'pt')),
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '線端'), seg('cap', [['butt', 'なし'], ['round', '丸'], ['square', '突出']])),
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '角'), seg('join', [['miter', 'マイター'], ['round', 'ラウンド'], ['bevel', 'ベベル']])),
-        h('div', { class: 'row' }, h('label', { class: 'lbl' }, this.dashOn, '破線'), h('span', { class: 'mini-lbl' }, '線'), this.dashA, h('span', { class: 'mini-lbl' }, '間隔'), this.dashB)),
+        h('div', { class: 'row' }, h('label', { class: 'lbl' }, this.dashOn, '破線'), h('span', { class: 'mini-lbl' }, '線'), this.dashA, h('span', { class: 'mini-lbl' }, '間隔'), this.dashB),
+        h('div', { class: 'row' }, h('span', { class: 'lbl' }, '線の形'), (this.profileSel = h('select', { onchange: (e) => this.setStroke('profile', e.target.value === 'uniform' ? null : e.target.value ? WIDTH_PROFILES[e.target.value][1] : undefined) },
+          Object.entries(WIDTH_PROFILES).map(([k, [l]]) => h('option', { value: k }, l)), h('option', { value: '', disabled: true }, '（線幅ツールで変えた形）'))))),
       sec('縁取り（袋文字）', this.buildRims()),
       sec('見た目',
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '不透明度'), this.opRange, this.opOut),
@@ -318,6 +323,10 @@ class Panels {
       $$('button', s).forEach((bb) => bb.classList.toggle('on', bb.dataset.v === cur));
     });
     this.dashOn.checked = !!(st.dash && st.dash.length);
+    if (this.profileSel !== active) {
+      const pj = JSON.stringify(st.profile || null), hit = Object.entries(WIDTH_PROFILES).find(([k, [, pr]]) => (k === 'uniform' ? pj === 'null' : JSON.stringify(pr) === pj));
+      this.profileSel.value = hit ? hit[0] : '';
+    }
     if (st.dash && st.dash.length) { set(this.dashA, st.dash[0]); set(this.dashB, st.dash[1] ?? st.dash[0]); }
     // 見た目
     const it0 = sel[0];

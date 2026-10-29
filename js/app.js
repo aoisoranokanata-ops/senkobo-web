@@ -680,6 +680,13 @@ class App {
         ['ロック', () => this.lockSelection()], ['すべてのロックを解除', () => this.unlockAll()],
         ['隠す', () => this.hideSelection()], ['すべて表示', () => this.showAll()],
       ],
+      beyond: [
+        ['対称描画を始める…', () => this.startSymmetry()], ['左右対称で始める', () => this.startSymmetry('v')],
+        ['対称描画を終わる', () => this.stopSymmetry()], ['対称描画を再開（選んだ対称グループ）', () => this.resumeSymmetry()], ['対称を確定', () => this.expandSymmetry()], null,
+        ['線幅ツール（Shift+W）', () => this.setTool('width')], ['角を丸くする…', () => this.roundCornersDialog()], null,
+        ['再配色…', () => this.recolorDialog()], ['バリエーションを作る…', () => this.variationsDialog()], ['配色の提案…', () => this.harmonyDialog()], null,
+        ['アイコン・アセットの一括書き出し…', () => this.iconExportDialog()], ['画像トレース…', () => this.traceDialog()],
+      ],
       view: [
         ['アートボードに合わせる', () => this.view.fitArtboard()], ['全体を表示', () => this.fitAll()],
         ['100%', () => this.view.setZoom(1)], ['選んだ物に合わせる', () => { const b = selectionBBox(this.selection()); if (b) this.view.fitRect(b, 60); }], null,
@@ -780,6 +787,7 @@ class App {
       if (arrows[k]) { const s = e.shiftKey ? 10 : 1; return run(() => this.nudge(arrows[k][0] * s, arrows[k][1] * s)); }
       if (k === 'o' && e.shiftKey) return run(() => this.setTool('artboard'));
       if (k === 'm' && e.shiftKey) return run(() => this.setTool('shapebuilder'));
+      if (k === 'w' && e.shiftKey) return run(() => this.setTool('width'));
       const keys = { v: 'select', a: 'direct', p: 'pen', n: 'pencil', m: 'rect', l: 'ellipse', t: 'text', i: 'eyedropper', h: 'hand', g: 'gradient', '\\': 'line' };
       if (keys[k]) return run(() => this.setTool(keys[k]));
       if (k === 'x') return run(() => this.panels.setTarget(this.colorTarget === 'fill' ? 'stroke' : 'fill'));

@@ -204,7 +204,11 @@ class PdfWriter {
   _item(it, alpha) {
     const a = alpha * (it.opacity ?? 1), bm = PDF_BLEND[it.blend] || 'Normal';
     if (bm !== 'Normal') this.put(`q ${this.gs({ ca: 1, CA: 1, bm })}\n`);
-    if (it.kind === 'path') this.drawShape(it.paths, it.style, a, it.fill_rule === 'evenodd');
+    if (it.kind === 'path' && it.style.profile && it.style.stroke && it.style.width > 0) {
+      // 可変幅の線: 線は輪郭を塗った形（exe と同じ）
+      this.drawShape(it.paths, { ...it.style, stroke: null }, a, it.fill_rule === 'evenodd');
+      this.drawShape(variableOutline(it), { fill: it.style.stroke, stroke: null }, a, true);
+    } else if (it.kind === 'path') this.drawShape(it.paths, it.style, a, it.fill_rule === 'evenodd');
     else if (it.kind === 'text') {
       for (const p of textOutlinePaths(it, true)) this.drawShape(p.sps, p.style, a, false);
     } else if (it.kind === 'image') this.image(it, a);

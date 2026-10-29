@@ -93,12 +93,11 @@ Object.assign(App.prototype, {
     const targets = [];
     for (const it of topLevel(doc, sel)) for (const x of doc.iterTree([it])) if (x.kind === 'path' && x.style.stroke && x.style.width > 0 && x.paths.length) targets.push(x);
     if (!targets.length) { toast(hasTextIn(doc, sel) ? '文字の線は、先に［アウトラインを作成］してからにしてください' : '線のあるパスを選んでください'); return; }
-    if (targets.some((p) => p.style.profile)) toast('可変幅の線は、今は同じ太さとして形にします', 4000);
     const out = [];
     doc.edit('線のアウトライン', () => {
       for (const p of targets) {
         const st = p.style;
-        const sps = strokeOutline(p.paths, st.width, st.join || 'miter', st.miter || 10, st.cap || 'butt', st.dash, st.dash_offset || 0);
+        const sps = st.profile ? spsCopy(variableOutline(p)) : strokeOutline(p.paths, st.width, st.join || 'miter', st.miter || 10, st.cap || 'butt', st.dash, st.dash_offset || 0);
         if (!sps.length) continue;
         const outline = makePath(sps, newStyle(paintCopy(st.stroke), null, 1));
         outline.fill_rule = 'evenodd';

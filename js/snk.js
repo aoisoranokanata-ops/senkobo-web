@@ -92,7 +92,12 @@ function docToSvg(doc, artboard = 0, items = null) {
     if (it.kind === 'path') {
       if (!it.paths.length) return '';
       const d = svgD(it.paths), fr = it.fill_rule === 'evenodd' ? ' fill-rule="evenodd"' : '';
-      const body = `<path d="${d}" ${styleAttrs(it.style)}${fr}/>`;
+      let body = `<path d="${d}" ${styleAttrs(it.style)}${fr}/>`;
+      if (it.style.profile && it.style.stroke && it.style.width > 0) {      // 可変幅の線は輪郭を塗る
+        body = `<g${common(it)}>${rims(d, it.style)}<path d="${d}" ${styleAttrs({ ...it.style, stroke: null })}${fr}/>` +
+          `<path d="${svgD(variableOutline(it))}" ${paint(it.style.stroke, 'fill')} stroke="none" fill-rule="evenodd"/></g>`;
+        return body;
+      }
       return it.style.extra && it.style.extra.length ? `<g${common(it)}>${rims(d, it.style)}${body}</g>` : body.slice(0, -2) + `${common(it)}/>`;
     }
     if (it.kind === 'text') {
