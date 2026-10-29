@@ -1,7 +1,7 @@
 /* 線工房 Web — 共通の小道具: 行列・色・ZIP・ダウンロード */
 'use strict';
 
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.2.0';
 const LS = 'senkobo-web.';
 const PT_PER = { mm: 72 / 25.4, pt: 1, px: 1, cm: 72 / 2.54, in: 72, Q: 72 / 25.4 / 4 };
 

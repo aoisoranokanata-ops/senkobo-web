@@ -9,13 +9,13 @@
    iPhone/iPad のホーム画面アプリでは待機中の SW が切り替わらないことがあるので、待機させない。
    ファイルを直したら、下の VERSION と js/util.js の APP_VERSION を必ず上げること。
    ------------------------------------------------------------ */
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const PREFIX = 'senkobo-web-';
 const CACHE = PREFIX + 'v' + VERSION;
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
-  './js/util.js', './js/geom.js', './js/model.js', './js/render.js', './js/snk.js', './js/store.js',
-  './js/view.js', './js/tools.js', './js/panels.js', './js/app.js',
+  './js/util.js', './js/geom.js', './js/model.js', './js/text.js', './js/render.js', './js/snk.js', './js/store.js',
+  './js/view.js', './js/tools.js', './js/panels.js', './js/panels2.js', './js/app.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 

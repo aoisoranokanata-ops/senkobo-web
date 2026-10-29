@@ -3,6 +3,7 @@
   python tools/snk_check.py prepare   exe の見本（data/サンプル/*.snk）＋画像入りの見本を tools/fixtures/exe_*.snk に置き、
                                       exe で描いた絵を exe_*.png に
   （ブラウザで tools/roundtrip.js を実行 → web_*.snk と web_*.png が PUT で届く）
+  python tools/snk_check.py compare   exe と Web の絵を横に並べた cmp_*.png を作る
   python tools/snk_check.py check     web_*.snk を exe で開き、元の exe_*.snk と中身（to_dict）が同じか、
                                       exe で描いた絵が元と同じか、Web の絵と大きく違わないかを調べる
 
@@ -112,6 +113,18 @@ def main() -> int:
             names.append(f.stem[4:])
         (FIX / "list.json").write_text(json.dumps(names), encoding="utf-8")
         print("用意:", ", ".join(names))
+        return 0
+    if cmd == "compare":            # exe の絵と Web の絵を横に並べた cmp_*.png
+        for f in sorted(FIX.glob("exe_*.png")):
+            w = FIX / f"web_{f.stem[4:]}.png"
+            if w.exists():
+                a, b = Image.open(f).convert("RGB"), Image.open(w).convert("RGB")
+                b = b.resize(a.size)
+                c = Image.new("RGB", (a.width * 2 + 10, a.height), "gray")
+                c.paste(a, (0, 0))
+                c.paste(b, (a.width + 10, 0))
+                c.save(FIX / f"cmp_{f.stem[4:]}.png")
+        print("cmp_*.png を作りました（左 exe・右 Web）")
         return 0
     bad = 0
     for f in sorted(FIX.glob("exe_*.snk")):

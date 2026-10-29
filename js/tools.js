@@ -6,6 +6,7 @@
 const TOOL_LABEL = {
   select: '選択', direct: 'ダイレクト選択', pen: 'ペン', pencil: '鉛筆', rect: '長方形', roundrect: '角丸長方形',
   ellipse: '楕円', polygon: '多角形', star: 'スター', line: '直線', text: '文字', eyedropper: 'スポイト', hand: '手のひら',
+  gradient: 'グラデーション', artboard: 'アートボード',
 };
 
 function saveItems(items) { return items.map((it) => JSON.stringify(packItem(it))); }
@@ -520,7 +521,13 @@ class TextTool {
   down(x, y, e) {
     if (this.app.editing) this.app.endTextEdit();
     const hit = this.app.view.hitLeaf(x, y);
-    this.st = { x0: x, y0: y, x1: x, y1: y, hit: hit && hit.kind === 'text' ? hit : null, moved: false, e0: e };
+    // パスの線の近くを押したら: 開いたパス → パス上文字、閉じたパス → その形のエリア内文字
+    let onPath = null;
+    if (hit && hit.kind === 'path' && this.app.settings.textOnShapes !== false && hit.paths.length) {
+      _hitCtx.lineWidth = 2 * this.app.view.tol(this.app.touchy ? 10 : 6);
+      if (_hitCtx.isPointInStroke(spsPath2D(hit.paths), x, y)) onPath = hit;
+    }
+    this.st = { x0: x, y0: y, x1: x, y1: y, hit: hit && hit.kind === 'text' ? hit : null, onPath, moved: false, e0: e };
   }
   drag(x, y, e, lp) {
     const st = this.st;
@@ -535,10 +542,26 @@ class TextTool {
     this.st = null;
     if (!st) return;
     if (st.hit && !st.moved) { app.editText(st.hit); return; }
-    const S = app.settings, style = newStyle(app.curStyle.fill || hexColor('#000000', this.doc.data.color_mode === 'cmyk'), null);
+    // 文字の色は今の塗り。ただし白・なしだと見えないので黒に
+    const f = app.curStyle.fill, white = !f || isGradient(f) || colorRGB(f).every((v) => v > 0.97);
+    const S = app.settings, style = newStyle(white ? hexColor('#000000', this.doc.data.color_mode === 'cmyk') : paintCopy(f), null);
     const it = makeText('', S.font || 'Yu Gothic', S.fontSize || 24, style);
     if (S.fontStyle) it.font_style = S.fontStyle;
     if (S.vertical) it.vertical = true;
+    if (st.onPath && !st.moved) {
+      const p = st.onPath, closed = p.paths.some((sp) => sp.c);
+      it.text_kind = closed ? 'area' : 'path';
+      it.frame = closed ? spsCopy(p.paths.filter((sp) => sp.c)) : [spCopy(p.paths[0])];
+      if (!closed) delete it.vertical;
+      this.doc.begin('文字');
+      const parent = this.doc.parentOf(p) || this.doc.currentLayer(), idx = parent.children.indexOf(p);
+      this.doc.remove(p);
+      this.doc.addItem(it, parent, Math.max(0, idx));
+      app.select([it], true);
+      app.editText(it, true);
+      toast(closed ? '形の中に文字を入れます' : 'パスに沿って文字を並べます');
+      return;
+    }
     if (st.moved) {
       const x0 = Math.min(st.x0, st.x1), y0 = Math.min(st.y0, st.y1), w = Math.abs(st.x1 - st.x0), h = Math.abs(st.y1 - st.y0);
       it.text_kind = 'area';
@@ -558,6 +581,119 @@ class TextTool {
     ctx.strokeStyle = '#4f7cff'; ctx.setLineDash([4, 3]); ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0); ctx.setLineDash([]);
   }
 }
+
+// ---- グラデーション（引っぱった向きと長さに）----------------------------------------------------
+class GradientTool {
+  constructor(app) { this.app = app; this.st = null; }
+  down(x, y, e) {
+    const app = this.app;
+    if (!app.selection().length) { const hit = app.view.hitTop(x, y); if (hit) app.select([hit]); }
+    if (!app.selection().length) { toast('塗る物を選んでから引っぱってください'); return; }
+    [x, y] = app.view.snap(x, y, excludeIds(app.doc, app.selection()));
+    this.st = { x0: x, y0: y, moved: false, e0: e };
+  }
+  drag(x, y, e, lp) {
+    const st = this.st;
+    if (!st) return;
+    const [sx, sy] = this.app.view.toScreen(st.x0, st.y0);
+    if (!st.moved && Math.hypot(lp.x - sx, lp.y - sy) < moveThreshold(st.e0)) return;
+    st.moved = true;
+    if (e.shiftKey) [x, y] = constrainAngle(st.x0, st.y0, x, y);
+    this.app.makeGradient([st.x0, st.y0], [x, y], 'grad-tool-' + st.e0.timeStamp);
+  }
+  up() { this.st = null; }
+  cancel() { this.st = null; }
+  paint(ctx) {
+    const app = this.app, v = app.view, t = app.colorTarget;
+    for (const it of app.panels.styledLeaves().slice(0, 8)) {
+      const g = it.style[t];
+      if (!isGradient(g)) continue;
+      const [ax, ay] = v.toScreen(...g.p0), [bx, by] = v.toScreen(...g.p1);
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+      for (const [pos, c] of g.stops) {
+        const px = ax + (bx - ax) * pos, py = ay + (by - ay) * pos;
+        ctx.fillStyle = colorHex(c); ctx.fillRect(px - 5, py - 5, 10, 10); ctx.strokeStyle = '#000'; ctx.strokeRect(px - 5.5, py - 5.5, 11, 11);
+      }
+      ctx.beginPath(); ctx.arc(ax, ay, 5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke();
+      break;
+    }
+  }
+}
+
+// ---- アートボード（つかんで動かす・角と辺で大きさ）-------------------------------------------------
+class ArtboardTool {
+  constructor(app) { this.app = app; this.st = null; this.showsBBox = false; }
+  get doc() { return this.app.doc; }
+  handles(a) {
+    const v = this.app.view, [x0, y0] = v.toScreen(a.x, a.y), [x1, y1] = v.toScreen(a.x + a.w, a.y + a.h), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    return [['nw', x0, y0], ['n', cx, y0], ['ne', x1, y0], ['e', x1, cy], ['se', x1, y1], ['s', cx, y1], ['sw', x0, y1], ['w', x0, cy]];
+  }
+  down(x, y, e, lp) {
+    const app = this.app, doc = this.doc;
+    const cur = app.curAB(), r = app.touchy ? 16 : 9;
+    const hh = this.handles(cur).find(([, hx, hy]) => Math.hypot(hx - lp.x, hy - lp.y) <= r);
+    let i = app.curArtboard;
+    if (!hh) {
+      const k = doc.artboards.findIndex((a) => x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h);
+      if (k < 0) { this.st = null; return; }
+      i = k; app.curArtboard = k; app.panels.refresh();
+    }
+    const a = doc.artboards[i];
+    // 動かすときは、上に載っている絵も一緒に（設定で切れる）
+    const items = !hh && app.settings.abMoveArt !== false ? doc.layers.filter((l) => !l.locked).flatMap((l) => l.children).filter((c) => {
+      if (c.locked) return false;
+      const b = itemBBox(c);
+      return b && b[0] >= a.x - 0.01 && b[1] >= a.y - 0.01 && b[2] <= a.x + a.w + 0.01 && b[3] <= a.y + a.h + 0.01;
+    }) : [];
+    doc.begin(hh ? 'アートボードの大きさ' : 'アートボードの移動');
+    this.st = { h: hh && hh[0], a, orig: { ...a }, items, saved: saveItems(items), x0: x, y0: y, moved: false, e0: e };
+  }
+  drag(x, y, e, lp) {
+    const st = this.st;
+    if (!st) return;
+    const v = this.app.view;
+    if (!st.moved) { const [sx, sy] = v.toScreen(st.x0, st.y0); if (Math.hypot(lp.x - sx, lp.y - sy) < moveThreshold(st.e0)) return; st.moved = true; }
+    const o = st.orig, a = st.a;
+    let dx = x - st.x0, dy = y - st.y0;
+    if (!st.h) {
+      if (e.shiftKey) [dx, dy] = constrainAngle(0, 0, dx, dy);
+      a.x = o.x + dx; a.y = o.y + dy;
+      st.items.forEach((it, i) => loadInto(it, st.saved[i]));
+      for (const it of st.items) itemTransform(it, M.t(dx, dy));
+    } else {
+      const h = st.h;
+      let x0 = o.x, y0 = o.y, x1 = o.x + o.w, y1 = o.y + o.h;
+      [x, y] = v.snap(x, y);
+      if (h.includes('w')) x0 = Math.min(x, x1 - 1); if (h.includes('e')) x1 = Math.max(x, x0 + 1);
+      if (h.includes('n')) y0 = Math.min(y, y1 - 1); if (h.includes('s')) y1 = Math.max(y, y0 + 1);
+      Object.assign(a, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+    }
+    for (const k of ['x', 'y', 'w', 'h']) a[k] = Math.round(a[k] * 1e4) / 1e4;
+    this.doc.touch();
+    v.request();
+    this.app.panels.refreshSoon();
+  }
+  up() {
+    const st = this.st;
+    this.st = null;
+    if (!st) return;
+    if (st.moved) this.doc.commit(); else this.doc.cancel();
+  }
+  cancel() { if (this.st) this.doc.cancel(); this.st = null; }
+  paint(ctx) {
+    const app = this.app, a = app.curAB(), v = app.view;
+    const [x0, y0] = v.toScreen(a.x, a.y), [x1, y1] = v.toScreen(a.x + a.w, a.y + a.h);
+    ctx.strokeStyle = '#4f7cff'; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.lineWidth = 1;
+    const hs = app.handleSize();
+    ctx.fillStyle = '#fff';
+    for (const [, hx, hy] of this.handles(a)) { ctx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs); ctx.strokeRect(hx - hs / 2 + 0.5, hy - hs / 2 + 0.5, hs - 1, hs - 1); }
+    const u = PT_PER[app.doc.data.units] || 1;
+    ctx.fillStyle = '#fff'; ctx.font = '12px system-ui';
+    ctx.fillText(`${+(a.w / u).toFixed(1)} × ${+(a.h / u).toFixed(1)} ${app.doc.data.units}`, x0, y1 + 16);
+  }
+}
+
 
 // ---- スポイト・手のひら ---------------------------------------------------------------------
 class EyedropperTool {
@@ -601,5 +737,6 @@ function makeTools(app) {
     rect: new ShapeTool(app, 'rect'), roundrect: new ShapeTool(app, 'roundrect'), ellipse: new ShapeTool(app, 'ellipse'),
     polygon: new ShapeTool(app, 'polygon'), star: new ShapeTool(app, 'star'), line: new ShapeTool(app, 'line'),
     text: new TextTool(app), eyedropper: new EyedropperTool(app), hand: new HandTool(app),
+    gradient: new GradientTool(app), artboard: new ArtboardTool(app),
   };
 }

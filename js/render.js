@@ -1,83 +1,14 @@
 /* 線工房 Web — 描画（Canvas 2D）。画面・PNG 書き出し・サムネイルで同じ描き方。
 
-   文字は端末のフォントで描く（exe の harfbuzz の組版とは字の形・幅が少し違う）。
-   効果: ドロップシャドウ・外側の光彩は canvas の shadow、ぼかしは filter、内側の光彩は省略（フェーズ2で）。
+   文字は端末のフォントで描く（組版は text.js、exe の harfbuzz とは字の形・幅が少し違う）。
+   効果（exe の ui/render.py と同じ値の意味。ぼかしの σ = blur / 2）:
+   - ドロップシャドウ・外側の光彩だけなら canvas の shadow でそのまま描く（速い）
+   - ぼかし・内側の光彩があるときは、物を画面の画素の大きさの別の canvas に描いて作る
+   iPad の Safari は ctx.filter が効かないので、ぼかしは自前（ボックスぼかし 3 回 ≒ ガウス）。
 */
 'use strict';
 
-const FONT_FALLBACK_SANS = '"Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif';
-const FONT_FALLBACK_SERIF = '"Hiragino Mincho ProN", "Yu Mincho", "YuMincho", serif';
-const _measure = document.createElement('canvas').getContext('2d');
-const _imageCache = new Map();      // image id → ImageBitmap / HTMLImageElement（読み込み中は 'loading'）
-
-function cssFont(family, style, size) {
-  const serif = /mincho|明朝|serif|song|ming/i.test(family || '');
-  const bold = /bold|heavy|black|太|w6|w7|w8|w9/i.test(style || '');
-  const fam = `"${String(family || '').replace(/"/g, '')}", ${serif ? FONT_FALLBACK_SERIF : FONT_FALLBACK_SANS}`;
-  return `${bold ? '700' : '400'} ${size}px ${fam}`;
-}
-
-/** 文字の並び（ローカル座標）: 行ごとの {text, x, y, w}、外枠、行の高さ。縦書き・エリア内も簡単に組む */
-function textLayout(it) {
-  const key = JSON.stringify([it.text, it.font, it.font_style, it.size, it.tracking, it.leading, it.align, it.vertical,
-    it.text_kind, it.frame && it.frame.map((s) => s.n.map((n) => [n.x, n.y]))]);
-  if (it._lay && it._lay.key === key) return it._lay;
-  const size = it.size || 24, lh = it.leading > 0 ? it.leading : size * 1.5;
-  const asc = size * 0.88, desc = size * 0.12;
-  _measure.font = cssFont(it.font, it.font_style, size);
-  const track = (it.tracking || 0) / 1000 * size;
-  const width = (s) => _measure.measureText(s).width + track * [...s].length;
-  const lines = [];
-  const paras = String(it.text || '').split('\n');
-  const vertical = !!it.vertical && it.text_kind !== 'path';
-  let frameBox = null;
-  if (it.text_kind === 'area' && it.frame && it.frame.length) frameBox = spsBBox(it.frame);
-  if (vertical) {
-    // 縦書き: 1 字ずつ下へ、列は右から左
-    let col = 0;
-    const colLen = frameBox ? frameBox[3] - frameBox[1] : Infinity;
-    const x0 = frameBox ? frameBox[2] - size / 2 : 0, y0 = frameBox ? frameBox[1] : 0;
-    for (const p of paras) {
-      let y = 0, chars = [];
-      const flush = () => { lines.push({ chars, x: x0 - col * lh, y: y0 }); col++; chars = []; y = 0; };
-      for (const ch of p) {
-        const adv = size + track;
-        if (y + size > colLen && chars.length) flush();
-        chars.push({ ch, y });
-        y += adv;
-      }
-      flush();
-    }
-    const b = lines.length ? [Math.min(...lines.map((l) => l.x)) - size / 2, y0, x0 + size / 2,
-      y0 + Math.max(size, ...lines.map((l) => (l.chars.length ? l.chars[l.chars.length - 1].y + size : size)))] : null;
-    it._lay = { key, lines, vertical: true, bbox: frameBox || b, size, lh, asc, desc };
-    return it._lay;
-  }
-  const maxW = frameBox ? frameBox[2] - frameBox[0] : Infinity;
-  const NO_START = '、。，．・：；？！ー）」』】〕〉》っゃゅょァィゥェォッャュョ';
-  let y = frameBox ? frameBox[1] + asc : 0;
-  for (const p of paras) {
-    // 折り返し（エリア内文字）: 日本語は 1 字ずつ・英単語は語ごと
-    const tokens = p.match(/[A-Za-z0-9'’\-_.,!?]+\s*|\s+|./gu) || [''];
-    let cur = '';
-    for (const tk of tokens) {
-      if (frameBox && cur && width(cur + tk) > maxW && !NO_START.includes(tk[0])) { lines.push({ text: cur, y }); cur = tk.trimStart(); y += lh; }
-      else cur += tk;
-    }
-    lines.push({ text: cur, y });
-    y += lh;
-  }
-  for (const l of lines) {
-    l.w = width(l.text);
-    const left = frameBox ? frameBox[0] : 0, room = frameBox ? maxW : 0;
-    l.x = it.align === 'center' ? (frameBox ? left + (room - l.w) / 2 : -l.w / 2) : it.align === 'right' ? (frameBox ? left + room - l.w : -l.w) : left;
-  }
-  const b = lines.length ? [Math.min(...lines.map((l) => l.x)), lines[0].y - asc, Math.max(...lines.map((l) => l.x + l.w)),
-    lines[lines.length - 1].y + desc] : null;
-  it._lay = { key, lines, vertical: false, bbox: frameBox || b, size, lh, asc, desc };
-  return it._lay;
-}
-function textLocalBBox(it) { return textLayout(it).bbox; }
+const _imageCache = new Map();      // image id → ImageBitmap（読み込み中は 'loading'）
 
 function paintStyle(ctx, p, alpha, inv) {
   if (!p) return null;
@@ -110,43 +41,158 @@ function imageFor(doc, id, onload) {
   return null;
 }
 
+// ---- 効果 ------------------------------------------------------------------------------
+const EFFECTS = {
+  drop_shadow: { label: 'ドロップシャドウ', defaults: { dx: 7, dy: 7, blur: 5, opacity: 0.75, mode: 'multiply', color: { m: 'rgb', v: [0, 0, 0] } } },
+  outer_glow: { label: '光彩（外側）', defaults: { blur: 10, opacity: 0.75, mode: 'screen', color: { m: 'rgb', v: [1, 0.94902, 0.47843] } } },
+  inner_glow: { label: '光彩（内側）', defaults: { blur: 8, opacity: 0.75, mode: 'screen', color: { m: 'rgb', v: [1, 1, 1] } } },
+  blur: { label: 'ぼかし（ガウス）', defaults: { radius: 4 } },
+};
+function newEffect(type) { return { type, on: true, ...JSON.parse(JSON.stringify(EFFECTS[type].defaults)) }; }
+function activeEffects(it) { return (it.effects || []).filter((e) => e.on !== false && EFFECTS[e.type]); }
+function effectMargin(fx) {
+  let m = 0;
+  for (const e of fx) {
+    if (e.type === 'drop_shadow') m = Math.max(m, Math.max(Math.abs(e.dx || 0), Math.abs(e.dy || 0)) + (e.blur || 0) * 1.6);
+    else if (e.type === 'outer_glow') m = Math.max(m, (e.blur || 0) * 1.6);
+    else if (e.type === 'blur') m = Math.max(m, (e.radius || 0) * 1.6);
+  }
+  return m;
+}
+function effectColor(e, a) { const c = e.color && e.color.v ? e.color : { m: 'rgb', v: [0, 0, 0] }; return colorCSS(c, clamp01((e.opacity ?? 0.75) * a)); }
+const COMP_OK = new Set(['multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion']);
+
+/** RGBA（乗算していない）の画素をガウスに近くぼかす（σ は画素） */
+function blurImageData(img, sigma) {
+  if (!(sigma > 0.3)) return img;
+  const { width: w, height: h, data } = img;
+  const n = w * h, buf = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const a = data[i * 4 + 3] / 255;
+    buf[i * 4] = data[i * 4] * a; buf[i * 4 + 1] = data[i * 4 + 1] * a; buf[i * 4 + 2] = data[i * 4 + 2] * a; buf[i * 4 + 3] = a * 255;
+  }
+  // 3 回のボックスの大きさ（W. Jarosz の方法）
+  const wIdeal = Math.sqrt(12 * sigma * sigma / 3 + 1);
+  let wl = Math.floor(wIdeal); if (wl % 2 === 0) wl--;
+  const mIdeal = (12 * sigma * sigma - 3 * wl * wl - 12 * wl - 9) / (-4 * wl - 4), mm = Math.round(mIdeal);
+  const sizes = [0, 1, 2].map((i) => (i < mm ? wl : wl + 2));
+  const tmp = new Float32Array(n * 4);
+  const pass = (src, dst, r, horiz) => {
+    const len = horiz ? w : h, lines = horiz ? h : w, step = horiz ? 4 : w * 4, iarr = 1 / (r + r + 1);
+    for (let L = 0; L < lines; L++) {
+      const base = horiz ? L * w * 4 : L * 4;
+      for (let c = 0; c < 4; c++) {
+        let acc = 0;
+        for (let k = -r; k <= r; k++) acc += src[base + Math.min(len - 1, Math.max(0, k)) * step + c] * (k < 0 || k >= len ? 0 : 1);
+        for (let x = 0; x < len; x++) {
+          dst[base + x * step + c] = acc * iarr;
+          const add = x + r + 1, sub = x - r;
+          if (add < len) acc += src[base + add * step + c];
+          if (sub >= 0) acc -= src[base + sub * step + c];
+        }
+      }
+    }
+  };
+  for (const s of sizes) { const r = (s - 1) >> 1; pass(buf, tmp, r, true); pass(tmp, buf, r, false); }
+  for (let i = 0; i < n; i++) {
+    const a = buf[i * 4 + 3];
+    data[i * 4 + 3] = a;
+    const k = a > 0.01 ? 255 / a : 0;
+    data[i * 4] = buf[i * 4] * k; data[i * 4 + 1] = buf[i * 4 + 1] * k; data[i * 4 + 2] = buf[i * 4 + 2] * k;
+  }
+  return img;
+}
+function newCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
 class Renderer {
   constructor(doc, onImage) { this.doc = doc; this.outline = false; this.onImage = onImage; }
 
   drawDoc(ctx) { for (const l of this.doc.layers) this.drawItem(ctx, l, 1); }
 
   drawItem(ctx, it, alpha) {
-    if (it.visible === false || it._editing) return;
+    if (it.visible === false) return;
     const a = alpha * (it.opacity ?? 1);
     if (a <= 0.001 && !this.outline) return;
-    const blend = it.blend && it.blend !== 'normal' && !this.outline ? it.blend : null;
-    const fx = !this.outline && it.effects ? it.effects.filter((e) => e.on !== false) : [];
-    if (blend || fx.length) {
-      ctx.save();
-      if (blend) ctx.globalCompositeOperation = blend;
-      for (const e of fx) {
-        if (e.type === 'drop_shadow' || e.type === 'outer_glow') this.drawShadowed(ctx, it, a, e);
-      }
-      const blur = fx.find((e) => e.type === 'blur');
-      if (blur && 'filter' in ctx) ctx.filter = `blur(${(blur.radius || 4) / 2 * Math.sqrt(Math.abs(ctx.getTransform().a * ctx.getTransform().d))}px)`;
-      this.draw(ctx, it, a);
-      ctx.restore();
-    } else this.draw(ctx, it, a);
-  }
-  drawShadowed(ctx, it, a, e) {
-    // 影だけ: 画面の外に描いた物の影を元の位置へ落とす（shadowOffset は変換に影響されないので画素で）
-    const t = ctx.getTransform(), sc = Math.sqrt(Math.abs(t.a * t.d - t.b * t.c)) || 1;
-    const col = e.color ? colorCSS(e.color, (e.opacity ?? 0.75)) : 'rgba(0,0,0,0.75)';
-    const far = 100000;
+    const blend = it.blend && it.blend !== 'normal' && !this.outline && COMP_OK.has(it.blend) ? it.blend : null;
+    const fx = this.outline ? [] : activeEffects(it);
+    if (!blend && !fx.length) { this.draw(ctx, it, a); return; }
     ctx.save();
-    ctx.shadowColor = col;
-    ctx.shadowBlur = (e.blur || 0) * sc;
-    ctx.shadowOffsetX = far + (e.dx || 0) * t.a + (e.dy || 0) * t.c;
-    ctx.shadowOffsetY = (e.dx || 0) * t.b + (e.dy || 0) * t.d;
-    if (e.mode && e.mode !== 'normal') ctx.globalCompositeOperation = e.mode;
-    ctx.translate(-far / t.a, 0);
-    this.draw(ctx, it, a, true);
+    if (blend) ctx.globalCompositeOperation = blend;
+    if (fx.some((e) => e.type === 'blur' || e.type === 'inner_glow')) this.drawRasterFx(ctx, it, a, fx);
+    else {
+      for (const e of fx) this.drawShadowed(ctx, it, a, e, null);
+      this.draw(ctx, it, a);
+    }
     ctx.restore();
+  }
+  /** 影・外側の光彩だけ: 画面の外に描いた物の影を元の位置へ落とす（shadowOffset は変換に影響されないので画素で） */
+  drawShadowed(ctx, it, a, e, image) {
+    const t = ctx.getTransform(), sc = Math.sqrt(Math.abs(t.a * t.d - t.b * t.c)) || 1;
+    const far = 100000;
+    const ddx = e.type === 'drop_shadow' ? (e.dx || 0) * t.a + (e.dy || 0) * t.c : 0;
+    const ddy = e.type === 'drop_shadow' ? (e.dx || 0) * t.b + (e.dy || 0) * t.d : 0;
+    ctx.save();
+    ctx.shadowColor = effectColor(e, a);
+    ctx.shadowBlur = (e.blur || 0) * sc;
+    ctx.shadowOffsetX = far + ddx;
+    ctx.shadowOffsetY = ddy;
+    if (e.mode && COMP_OK.has(e.mode)) ctx.globalCompositeOperation = e.mode;
+    if (image) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(image.cv, image.x - far, image.y, image.w, image.h);
+    } else {
+      ctx.setTransform(new DOMMatrix([1, 0, 0, 1, -far, 0]).multiply(t));
+      this.draw(ctx, it, 1, true);
+    }
+    ctx.restore();
+  }
+  /** ぼかし・内側の光彩: 物を画素に描いてから作る */
+  drawRasterFx(ctx, it, a, fx) {
+    const b0 = itemVisualBBox(it);
+    if (!b0) return;
+    const rim = Math.max(0, ...((it.style && it.style.extra) || []).map((e) => e.width || 0)) / 2;
+    const m = effectMargin(fx) + rim + 2;
+    const t = ctx.getTransform(), sc = Math.sqrt(Math.abs(t.a * t.d - t.b * t.c)) || 1;
+    const corners = [[b0[0] - m, b0[1] - m], [b0[2] + m, b0[1] - m], [b0[2] + m, b0[3] + m], [b0[0] - m, b0[3] + m]].map(([x, y]) => [t.a * x + t.c * y + t.e, t.b * x + t.d * y + t.f]);
+    const W = ctx.canvas.width, H = ctx.canvas.height, pad = Math.ceil(effectMargin(fx) * sc) + 2;
+    let x0 = Math.floor(Math.max(-pad, Math.min(...corners.map((p) => p[0])))), y0 = Math.floor(Math.max(-pad, Math.min(...corners.map((p) => p[1]))));
+    let x1 = Math.ceil(Math.min(W + pad, Math.max(...corners.map((p) => p[0])))), y1 = Math.ceil(Math.min(H + pad, Math.max(...corners.map((p) => p[1]))));
+    if (x1 <= x0 || y1 <= y0) return;
+    const dw = x1 - x0, dh = y1 - y0, down = Math.min(1, Math.sqrt(3e6 / (dw * dh)));
+    const w = Math.max(1, Math.round(dw * down)), h = Math.max(1, Math.round(dh * down));
+    const src = newCanvas(w, h), sx = src.getContext('2d');
+    sx.setTransform(t.a * down, t.b * down, t.c * down, t.d * down, (t.e - x0) * down, (t.f - y0) * down);
+    this.draw(sx, it, 1);
+    const blur = fx.filter((e) => e.type === 'blur').reduce((s, e) => s + (e.radius || 0), 0);
+    let shape = src;
+    if (blur > 0) {
+      const img = sx.getImageData(0, 0, w, h);
+      blurImageData(img, blur * sc * down / 2);
+      shape = newCanvas(w, h); shape.getContext('2d').putImageData(img, 0, 0);
+    }
+    const target = { cv: shape, x: x0, y: y0, w: dw, h: dh };
+    for (const e of fx) if (e.type === 'drop_shadow' || e.type === 'outer_glow') this.drawShadowed(ctx, it, a, e, target);
+    if (blur > 0) {
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha *= a; ctx.drawImage(shape, x0, y0, dw, dh); ctx.restore();
+    } else this.draw(ctx, it, a);
+    for (const e of fx) {
+      if (e.type !== 'inner_glow') continue;
+      // 形の外側を塗った物に影を付け、形の中だけ残す → 縁ほど強い光
+      const inv = newCanvas(w, h), ix = inv.getContext('2d');
+      ix.fillStyle = '#000'; ix.fillRect(0, 0, w, h);
+      ix.globalCompositeOperation = 'destination-out'; ix.drawImage(shape, 0, 0);
+      const glow = newCanvas(w, h), gx = glow.getContext('2d'), far = 100000;
+      gx.shadowColor = colorCSS(e.color && e.color.v ? e.color : { m: 'rgb', v: [1, 1, 1] }, 1);
+      gx.shadowBlur = (e.blur || 0) * sc * down;
+      gx.shadowOffsetX = far;
+      gx.drawImage(inv, -far, 0); gx.drawImage(inv, -far, 0);
+      gx.globalCompositeOperation = 'destination-in'; gx.shadowColor = 'transparent'; gx.drawImage(shape, 0, 0);
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if (e.mode && COMP_OK.has(e.mode)) ctx.globalCompositeOperation = e.mode;
+      ctx.globalAlpha *= clamp01((e.opacity ?? 0.75) * a);
+      ctx.drawImage(glow, x0, y0, dw, dh);
+      ctx.restore();
+    }
   }
 
   draw(ctx, it, a, flat = false) {
@@ -176,7 +222,7 @@ class Renderer {
       if (it.symmetry) for (const m of symmetryMatrices(it.symmetry)) { ctx.save(); ctx.transform(...m); body(); ctx.restore(); }
     }
   }
-  drawPath(ctx, it, a, flat) {
+  drawPath(ctx, it, a) {
     if (!it.paths.length) return;
     const p = spsPath2D(it.paths), st = it.style;
     if (this.outline) { ctx.strokeStyle = '#000'; ctx.lineWidth = 1 / M.scale(toArr(ctx.getTransform())); ctx.setLineDash([]); ctx.stroke(p); return; }
@@ -202,34 +248,40 @@ class Renderer {
     const lay = textLayout(it), st = it.style;
     ctx.save();
     ctx.transform(...it.matrix);
-    const inv = M.inv(it.matrix), sc = M.scale(it.matrix) || 1;
-    ctx.font = cssFont(it.font, it.font_style, lay.size);
     ctx.textBaseline = 'alphabetic';
-    if ('letterSpacing' in ctx) ctx.letterSpacing = ((it.tracking || 0) / 1000 * lay.size) + 'px';
+    ctx.textAlign = 'left';
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    const sc = M.scale(it.matrix) || 1;
     const each = (fn) => {
-      if (lay.vertical) {
-        ctx.textAlign = 'center';
-        for (const l of lay.lines) for (const c of l.chars) {
-          if (/[\x21-\x7e]/.test(c.ch)) {      // 半角は寝かせる
-            ctx.save(); ctx.translate(l.x, l.y + c.y + lay.size / 2); ctx.rotate(Math.PI / 2); fn(c.ch, 0, lay.size * 0.35); ctx.restore();
-          } else fn(c.ch, l.x, l.y + c.y + lay.asc);
-        }
-      } else { ctx.textAlign = 'left'; for (const l of lay.lines) fn(l.text, l.x, l.y); }
+      for (const g of lay.glyphs) {
+        ctx.save();
+        ctx.transform(...g.m);
+        ctx.font = g.font;
+        fn(g, M.scale(g.m) || 1);
+        ctx.restore();
+      }
     };
-    if (this.outline) { ctx.strokeStyle = '#000'; ctx.lineWidth = 0.6 / sc; each((s, x, y) => ctx.strokeText(s, x, y)); ctx.restore(); return; }
+    const inv = (g) => M.inv(M.then(g.m, it.matrix));
+    if (this.outline) { ctx.strokeStyle = '#000'; each((g, k) => { ctx.lineWidth = 0.6 / sc / k; ctx.strokeText(g.ch, 0, 0); }); ctx.restore(); return; }
     for (const e of (st.extra || []).slice().reverse()) {
       if (!e.paint || !(e.width > 0)) continue;
-      ctx.strokeStyle = paintStyle(ctx, e.paint, a, inv);
-      ctx.lineWidth = e.width / sc;
-      ctx.lineJoin = 'round';
-      each((s, x, y) => ctx.strokeText(s, x, y));
+      each((g, k) => {
+        ctx.strokeStyle = paintStyle(ctx, e.paint, a, inv(g));
+        ctx.lineWidth = e.width / sc / k;
+        ctx.lineJoin = e.join || 'round';
+        ctx.setLineDash([]);
+        ctx.strokeText(g.ch, 0, 0);
+      });
     }
-    if (st.fill) { ctx.fillStyle = paintStyle(ctx, st.fill, a, inv); each((s, x, y) => ctx.fillText(s, x, y)); }
-    if (st.stroke && st.width > 0) {
-      ctx.strokeStyle = paintStyle(ctx, st.stroke, a, inv);
-      applyStroke(ctx, st, sc);
-      each((s, x, y) => ctx.strokeText(s, x, y));
-    }
+    each((g, k) => {
+      const gs = glyphStyle(st, g);
+      if (gs.fill) { ctx.fillStyle = paintStyle(ctx, gs.fill, a, inv(g)); ctx.fillText(g.ch, 0, 0); }
+      if (gs.stroke && gs.width > 0) {
+        ctx.strokeStyle = paintStyle(ctx, gs.stroke, a, inv(g));
+        applyStroke(ctx, gs, sc * k);
+        ctx.strokeText(g.ch, 0, 0);
+      }
+    });
     ctx.restore();
   }
   /** 文書座標での形（クリップ・当たり判定用） */
@@ -249,8 +301,7 @@ function toArr(t) { return [t.a, t.b, t.c, t.d, t.e, t.f]; }
 function renderToCanvas(doc, rect, scale, background = null, items = null) {
   const [x0, y0, x1, y1] = rect;
   const w = Math.max(1, Math.ceil((x1 - x0) * scale - 1e-6)), h = Math.max(1, Math.ceil((y1 - y0) * scale - 1e-6));
-  const cv = document.createElement('canvas');
-  cv.width = w; cv.height = h;
+  const cv = newCanvas(w, h);
   const ctx = cv.getContext('2d');
   if (background) { ctx.fillStyle = background; ctx.fillRect(0, 0, w, h); }
   ctx.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);

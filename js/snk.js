@@ -39,23 +39,24 @@ function docToSvg(doc, artboard = 0, items = null) {
   const defs = [];
   let n = 0;
   const uid = (p) => p + (++n);
-  const paint = (p, what) => {
+  const paint = (p, what, inv = null) => {
     if (!p) return `${what}="none"`;
     if (isGradient(p)) {
       const gid = uid('grad');
+      const gt = inv ? ` gradientTransform="matrix(${inv.map(svgNum).join(' ')})"` : '';
       const stops = p.stops.map(([pos, c, o]) => `<stop offset="${svgNum(pos)}" stop-color="${colorHex(c)}"${o < 1 ? ` stop-opacity="${svgNum(o)}"` : ''}/>`).join('');
       if (p.kind === 'radial') {
         const r = Math.hypot(p.p1[0] - p.p0[0], p.p1[1] - p.p0[1]);
-        defs.push(`<radialGradient id="${gid}" gradientUnits="userSpaceOnUse" cx="${svgNum(p.p0[0])}" cy="${svgNum(p.p0[1])}" r="${svgNum(r)}">${stops}</radialGradient>`);
+        defs.push(`<radialGradient id="${gid}" gradientUnits="userSpaceOnUse"${gt} cx="${svgNum(p.p0[0])}" cy="${svgNum(p.p0[1])}" r="${svgNum(r)}">${stops}</radialGradient>`);
       } else {
-        defs.push(`<linearGradient id="${gid}" gradientUnits="userSpaceOnUse" x1="${svgNum(p.p0[0])}" y1="${svgNum(p.p0[1])}" x2="${svgNum(p.p1[0])}" y2="${svgNum(p.p1[1])}">${stops}</linearGradient>`);
+        defs.push(`<linearGradient id="${gid}" gradientUnits="userSpaceOnUse"${gt} x1="${svgNum(p.p0[0])}" y1="${svgNum(p.p0[1])}" x2="${svgNum(p.p1[0])}" y2="${svgNum(p.p1[1])}">${stops}</linearGradient>`);
       }
       return `${what}="url(#${gid})"`;
     }
     return `${what}="${colorHex(p)}"`;
   };
-  const styleAttrs = (st) => {
-    const a = [paint(st.fill, 'fill'), paint(st.stroke, 'stroke')];
+  const styleAttrs = (st, inv = null) => {
+    const a = [paint(st.fill, 'fill', inv), paint(st.stroke, 'stroke', inv)];
     if (st.stroke) {
       a.push(`stroke-width="${svgNum(st.width)}"`);
       if (st.cap && st.cap !== 'butt') a.push(`stroke-linecap="${st.cap}"`);
@@ -68,7 +69,25 @@ function docToSvg(doc, artboard = 0, items = null) {
     (it.blend && it.blend !== 'normal' ? ` style="mix-blend-mode:${it.blend}"` : '');
   const rims = (d, st, sc = 1) => (st.extra || []).slice().reverse().filter((e) => e.paint)
     .map((e) => `<path d="${d}" fill="none" ${paint(e.paint, 'stroke')} stroke-width="${svgNum(e.width / sc)}" stroke-linejoin="round" stroke-linecap="round"/>`).join('');
+  // 効果は SVG のフィルターに（影・外側の光彩・ぼかし。内側の光彩は書き出さない）
   const item = (it) => {
+    const body = itemBody(it), fx = it.visible === false ? [] : activeEffects(it).filter((e) => e.type !== 'inner_glow');
+    if (!body || !fx.length) return body;
+    const fid = uid('fx'), parts = [], merge = [];
+    let src = 'SourceGraphic';
+    fx.forEach((e, i) => {
+      if (e.type === 'blur') { parts.push(`<feGaussianBlur in="SourceGraphic" stdDeviation="${svgNum((e.radius || 0) / 2)}" result="bl${i}"/>`); src = `bl${i}`; return; }
+      const c = e.color && e.color.v ? e.color : { m: 'rgb', v: [0, 0, 0] };
+      parts.push(`<feGaussianBlur in="SourceAlpha" stdDeviation="${svgNum((e.blur || 0) / 2)}" result="b${i}"/>`,
+        `<feOffset in="b${i}" dx="${svgNum(e.type === 'drop_shadow' ? e.dx || 0 : 0)}" dy="${svgNum(e.type === 'drop_shadow' ? e.dy || 0 : 0)}" result="o${i}"/>`,
+        `<feFlood flood-color="${colorHex(c)}" flood-opacity="${svgNum(e.opacity ?? 0.75)}"/>`, `<feComposite in2="o${i}" operator="in" result="s${i}"/>`);
+      merge.push(`s${i}`);
+    });
+    defs.push(`<filter id="${fid}" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">${parts.join('')}` +
+      `<feMerge>${[...merge, src].map((x) => `<feMergeNode in="${x}"/>`).join('')}</feMerge></filter>`);
+    return `<g filter="url(#${fid})">${body}</g>`;
+  };
+  const itemBody = (it) => {
     if (it.visible === false) return '';
     if (it.kind === 'path') {
       if (!it.paths.length) return '';
@@ -77,13 +96,23 @@ function docToSvg(doc, artboard = 0, items = null) {
       return it.style.extra && it.style.extra.length ? `<g${common(it)}>${rims(d, it.style)}${body}</g>` : body.slice(0, -2) + `${common(it)}/>`;
     }
     if (it.kind === 'text') {
+      // 字ごとに置く（Web の組版のまま。字の形は開いた端末のフォント）
       const lay = textLayout(it), m = it.matrix.map(svgNum).join(' ');
-      const fam = esc(it.font || '');
-      const bold = /bold|太/i.test(it.font_style || '') ? ' font-weight="bold"' : '';
-      const tsp = lay.vertical ? '' : lay.lines.map((l) => `<tspan x="${svgNum(l.x)}" y="${svgNum(l.y)}">${esc(l.text)}</tspan>`).join('');
-      const vt = lay.vertical ? lay.lines.map((l) => `<tspan x="${svgNum(l.x)}" y="${svgNum(l.y)}">${esc(l.chars.map((c) => c.ch).join(''))}</tspan>`).join('') : '';
-      return `<text transform="matrix(${m})" font-family="${fam}, sans-serif" font-size="${svgNum(it.size)}"${bold}` +
-        `${lay.vertical ? ' writing-mode="vertical-rl"' : ''} ${styleAttrs(it.style)}${common(it)}>${tsp}${vt}</text>`;
+      const glyph = (g, attrs) => {
+        const f = g.font.match(/^(\d+) 100px (.*)$/);
+        return `<text transform="matrix(${g.m.map(svgNum).join(' ')})" font-size="100" font-weight="${f ? f[1] : 400}" font-family='${esc(f ? f[2] : 'sans-serif')}' ${attrs}>${esc(g.ch)}</text>`;
+      };
+      const sc = M.scale(it.matrix) || 1;
+      let out = '';
+      for (const e of (it.style.extra || []).slice().reverse()) {
+        if (!e.paint || !(e.width > 0)) continue;
+        out += lay.glyphs.map((g) => glyph(g, `fill="none" ${paint(e.paint, 'stroke', M.inv(M.then(g.m, it.matrix)))} stroke-width="${svgNum(e.width / sc / (M.scale(g.m) || 1))}" stroke-linejoin="round"`)).join('');
+      }
+      out += lay.glyphs.map((g) => {
+        const gs = glyphStyle(it.style, g), k = M.scale(g.m) || 1;
+        return glyph(g, styleAttrs({ ...gs, width: (gs.width || 0) / sc / k, dash: gs.dash && gs.dash.map((d) => d / sc / k) }, M.inv(M.then(g.m, it.matrix))));
+      }).join('');
+      return `<g transform="matrix(${m})"${common(it)}>${out}</g>`;
     }
     if (it.kind === 'image') {
       const b = doc.images[it.image];

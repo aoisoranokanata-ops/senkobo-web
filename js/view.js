@@ -54,8 +54,15 @@ class View {
     this.app.onView();
     this.request();
   }
+  /** 見えている所（狭い画面でパネルが重なっていればその分を除く。キャンバスの座標） */
+  visible() {
+    const r = this.cv.getBoundingClientRect(), p = document.getElementById('panel');
+    let w = r.width;
+    if (p && !p.classList.contains('closed') && getComputedStyle(p).position === 'absolute') w = Math.max(120, w - p.getBoundingClientRect().width);
+    return { width: w, height: r.height };
+  }
   fitRect(b, margin = 30) {
-    const r = this.cv.getBoundingClientRect();
+    const r = this.visible();
     const w = Math.max(b[2] - b[0], 1e-3), h = Math.max(b[3] - b[1], 1e-3);
     this.zoom = Math.max(0.02, Math.min(64, Math.min((r.width - 2 * margin) / w, (r.height - 2 * margin) / h)));
     this.ox = r.width / 2 - (b[0] + w / 2) * this.zoom;
@@ -69,7 +76,7 @@ class View {
     const a = this.doc.artboards[Math.max(0, Math.min(i, this.doc.artboards.length - 1))];
     this.fitRect([a.x, a.y, a.x + a.w, a.y + a.h]);
   }
-  center() { const r = this.cv.getBoundingClientRect(); return this.toDoc(r.width / 2, r.height / 2); }
+  center() { const r = this.visible(); return this.toDoc(r.width / 2, r.height / 2); }
 
   // ---- 入力 ------------------------------------------------------------------------
   down(e) {
@@ -291,14 +298,59 @@ class View {
       ctx.setLineDash([]);
     }
     this.paintSelection(ctx);
+    if (this.app.editing) this.paintTextEdit(ctx);
     this.app.tool.paint && this.app.tool.paint(ctx);
     if (this.snapMark) {
       const [sx, sy] = this.toScreen(...this.snapMark);
       ctx.strokeStyle = '#ff3ca0'; ctx.strokeRect(sx - 4, sy - 4, 8, 8);
     }
   }
+  /** 文字の編集中: 選んでいる範囲を色で、カーソルを線で（入力欄の選択に合わせる） */
+  paintTextEdit(ctx) {
+    const it = this.app.editing.it, lay = textLayout(it), ta = document.getElementById('textedit');
+    const a = cpIndex(ta.value, ta.selectionStart), b = cpIndex(ta.value, ta.selectionEnd);
+    const [ascR, descR] = fontMetrics(it.font);
+    const toS = (g, x, y) => this.toScreen(...M.map(it.matrix, ...M.map(g.m, x, y)));
+    if (it.frame && it.frame.length) {
+      const p = new Path2D();
+      p.addPath(spsPath2D(it.frame), new DOMMatrix([...M.then(it.matrix, [this.zoom, 0, 0, this.zoom, this.ox, this.oy])]));
+      ctx.strokeStyle = 'rgba(79,124,255,0.7)'; ctx.setLineDash([4, 3]); ctx.stroke(p); ctx.setLineDash([]);
+    }
+    const gs = lay.glyphs.filter((g) => g.adv !== undefined);
+    if (b > a) {
+      ctx.fillStyle = 'rgba(79,124,255,0.35)';
+      for (const g of gs) {
+        if (g.ci < a || g.ci >= b) continue;
+        const q = [[0, -ascR * 100], [g.w100, -ascR * 100], [g.w100, descR * 100], [0, descR * 100]].map(([x, y]) => toS(g, x, y));
+        ctx.beginPath(); q.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.fill();
+      }
+      return;
+    }
+    let g = gs.find((x) => x.ci >= a), atEnd = false;
+    if (!g || g.ci !== a) { const prev = gs.filter((x) => x.ci < a).pop(); if (prev) { g = prev; atEnd = true; } }
+    ctx.strokeStyle = '#ff3ca0'; ctx.lineWidth = 2;
+    if (!g) {
+      const [x, y] = this.toScreen(...M.map(it.matrix, 0, 0)), s = (it.size || 24) * this.zoom * M.scale(it.matrix);
+      ctx.beginPath();
+      if (lay.vertical) { ctx.moveTo(x - s / 2, y); ctx.lineTo(x + s / 2, y); } else { ctx.moveTo(x, y - s * 0.88); ctx.lineTo(x, y + s * 0.12); }
+      ctx.stroke();
+    } else if (lay.vertical && Math.abs(g.m[1]) < 1e-9) {
+      // 縦書きの正立した字: 字の上（終わりなら下）に横線
+      const y = atEnd ? descR * 100 : -ascR * 100, [p0x, p0y] = toS(g, -10, y), [p1x, p1y] = toS(g, g.w100 + 10, y);
+      ctx.beginPath(); ctx.moveTo(p0x, p0y); ctx.lineTo(p1x, p1y); ctx.stroke();
+    } else {
+      const x = atEnd ? g.w100 : 0, [p0x, p0y] = toS(g, x, -ascR * 100), [p1x, p1y] = toS(g, x, descR * 100);
+      ctx.beginPath(); ctx.moveTo(p0x, p0y); ctx.lineTo(p1x, p1y); ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+  }
   outlinePath(it) {
     // 選択の表示用（文書座標の Path2D）
+    if (it.kind === 'text' && it.frame && it.frame.length && (it.text_kind || 'point') !== 'point') {
+      const p = new Path2D();
+      p.addPath(spsPath2D(it.frame), new DOMMatrix(it.matrix));
+      return p;
+    }
     if (it.kind === 'text') {
       const b = textLocalBBox(it), p = new Path2D();
       if (b) { const r = new Path2D(); r.rect(b[0], b[1], b[2] - b[0], b[3] - b[1]); p.addPath(r, new DOMMatrix(it.matrix)); }

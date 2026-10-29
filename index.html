@@ -49,13 +49,14 @@
     <nav id="toolbar"></nav>
     <div id="stage">
       <canvas id="cv"></canvas>
-      <textarea id="textedit" hidden spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+      <div id="textdock" hidden><textarea id="textedit" spellcheck="false" autocapitalize="off" autocomplete="off" rows="3"></textarea><button id="text-done" class="btn primary">完了</button></div>
       <div id="status"></div>
     </div>
     <aside id="panel">
-      <div class="tabs"><button data-tab="prop">プロパティ</button><button data-tab="layers">レイヤー</button></div>
+      <div class="tabs"><button data-tab="prop">プロパティ</button><button data-tab="layers">レイヤー</button><button data-tab="artboards">アートボード</button></div>
       <div class="page" id="page-prop" data-page="prop"></div>
       <div class="page" id="page-layers" data-page="layers" hidden></div>
+      <div class="page" id="page-artboards" data-page="artboards" hidden></div>
     </aside>
   </div>
 </div>
@@ -69,12 +70,14 @@
 <script src="js/util.js"></script>
 <script src="js/geom.js"></script>
 <script src="js/model.js"></script>
+<script src="js/text.js"></script>
 <script src="js/render.js"></script>
 <script src="js/snk.js"></script>
 <script src="js/store.js"></script>
 <script src="js/view.js"></script>
 <script src="js/tools.js"></script>
 <script src="js/panels.js"></script>
+<script src="js/panels2.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

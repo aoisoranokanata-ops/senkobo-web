@@ -4,7 +4,7 @@
 const SETTINGS_DEFAULT = {
   snap: true, keepRatio: false, scaleStrokes: false, fingerDraws: true, pencilSmooth: 3, cornerRadius: 12,
   sides: 6, points: 5, starRatio: 0.5, font: 'Yu Gothic', fontSize: 24, fontStyle: '', vertical: false, panelTab: 'prop',
-  panelOpen: true,
+  panelOpen: true, textOnShapes: true, abMoveArt: true, refPoint: 'tl',
 };
 
 class App {
@@ -22,6 +22,7 @@ class App {
     this.space = false;
     this.outlineMode = false;
     this.editing = null;
+    this.curArtboard = 0;
     this.touchy = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
     this.renderer = new Renderer(null, () => this.view.request());
     this.view = new View(this, $('#cv'));
@@ -101,7 +102,7 @@ class App {
   onDocChange(kind) {
     if (kind === 'undo') {
       this.anchorSel = new Set([...this.anchorSel].filter((k) => { const [id, si, ni] = k.split(':').map(Number), p = this.doc.find(id); return p && p.paths && p.paths[si] && p.paths[si].n[ni]; }));
-      if (this.editing) { this.editing.it._editing = false; this.editing = null; $('#textedit').hidden = true; }
+      if (this.editing) { this.editing = null; $('#textdock').hidden = true; }
     }
     this.view.request();
     this.panels.refreshSoon();
@@ -229,69 +230,75 @@ class App {
     return s;
   }
 
-  // ---- 文字の入力（textarea を重ねる。日本語の変換もこれで効く）------------------------------------
+  // ---- 文字の入力（上の入力欄で打ち、キャンバスにはそのまま組んだ結果を出す。日本語の変換もこれで効く）------------
   editText(it, isNew = false) {
     if (this.editing) this.endTextEdit();
     if (!isNew) this.doc.begin('文字の編集');
-    this.editing = { it, isNew, orig: it.text };
-    it._editing = true;
+    this.editing = { it, isNew, orig: it.text, origRuns: JSON.stringify(it.runs || null) };
     const ta = $('#textedit');
     ta.value = it.text || '';
-    ta.hidden = false;
-    this.layoutTextEdit();
+    $('#textdock').hidden = false;
     this.view.request();
-    setTimeout(() => { ta.focus(); if (!isNew) ta.select(); }, 0);
+    this.panels.refresh();
+    setTimeout(() => { ta.focus(); if (!isNew) ta.setSelectionRange(ta.value.length, ta.value.length); }, 0);
   }
-  layoutTextEdit() {
-    if (!this.editing) return;
-    const it = this.editing.it, ta = $('#textedit'), v = this.view;
-    delete it._lay;
-    const lay = textLayout(it), sc = M.scale(it.matrix) * v.zoom;
-    const b = lay.bbox || [0, -lay.asc, lay.size, lay.desc];
-    const [x0, y0] = v.toScreen(...M.map(it.matrix, b[0], b[1]));
-    const fs = lay.size * sc, lh = lay.lh * sc;
-    ta.style.font = cssFont(it.font, it.font_style, fs);
-    ta.style.lineHeight = lh + 'px';
-    ta.style.letterSpacing = ((it.tracking || 0) / 1000 * fs) + 'px';
-    ta.style.color = it.style.fill && !isGradient(it.style.fill) ? colorHex(it.style.fill) : '#000';
-    ta.style.textAlign = it.align === 'center' ? 'center' : it.align === 'right' ? 'right' : 'left';
-    ta.style.writingMode = lay.vertical ? 'vertical-rl' : 'horizontal-tb';
-    const area = it.text_kind === 'area';
-    const bw = (b[2] - b[0]) * sc, bh = (b[3] - b[1]) * sc;
-    const w = area ? bw : Math.max(bw + fs * 2, 140), hgt = area ? bh : Math.max(bh + lh * 0.5, lh * 1.2);
-    let left = x0, top = y0 - (lh - fs) / 2;
-    if (!area && it.align === 'center') left = x0 + bw / 2 - w / 2;
-    if (!area && it.align === 'right') left = x0 + bw - w;
-    if (lay.vertical) { top = y0; left = x0 + bw - Math.max(bw + fs * 2, lh * 1.2); }
-    Object.assign(ta.style, { left: left + 'px', top: top + 'px', width: (lay.vertical && !area ? Math.max(bw + fs * 2, lh * 1.2) : w) + 'px',
-      height: (lay.vertical && !area ? Math.max(bh + fs * 2, 140) : hgt) + 'px' });
+  layoutTextEdit() { this.view.request(); }
+  /** 編集中の文字で選んでいる範囲（コードポイントの番号 [a, b)）。選んでいなければ null */
+  textRange() {
+    if (!this.editing) return null;
+    const ta = $('#textedit'), v = ta.value;
+    const a = cpIndex(v, ta.selectionStart), b = cpIndex(v, ta.selectionEnd);
+    return b > a ? [a, b] : null;
   }
   onTextInput() {
     if (!this.editing) return;
-    const it = this.editing.it;
-    it.text = $('#textedit').value;
+    const it = this.editing.it, now = $('#textedit').value;
+    if (it.runs) { it.runs = runsAfterTextChange(it.runs, it.text, now); if (!it.runs.length) delete it.runs; }
+    it.text = now;
     delete it._lay;
     this.doc.touch();
-    this.layoutTextEdit();
     this.view.request();
   }
   endTextEdit() {
     const ed = this.editing;
     if (!ed) return;
+    if ($('#textedit').value !== ed.it.text) this.onTextInput();
     this.editing = null;
     const it = ed.it, ta = $('#textedit');
-    it._editing = false;
-    it.text = ta.value;
     delete it._lay;
-    ta.hidden = true;
+    $('#textdock').hidden = true;
     ta.blur();
     if (!it.text.trim()) {
       if (ed.isNew) this.doc.cancel();
       else { this.doc.remove(it); this.doc.commit(); }
       this.select([]);
-    } else if (!ed.isNew && it.text === ed.orig) this.doc.cancel();
+    } else if (!ed.isNew && it.text === ed.orig && JSON.stringify(it.runs || null) === ed.origRuns) this.doc.cancel();
     else { this.doc.touch(); this.doc.commit(); this.select([it]); }
     this.view.request();
+    this.panels.refresh();
+  }
+  /** ポイント文字 ⇔ エリア内文字 */
+  convertTextKind() {
+    const t = this.panels.textTargets()[0];
+    if (!t) return;
+    const lay = textLayout(t);
+    this.doc.edit('文字の種類', () => {
+      if ((t.text_kind || 'point') === 'area') {
+        const fb = spsBBox(t.frame) || [0, 0, 0, 0], first = lay.lines[0];
+        const ox = lay.vertical ? (first ? (first[0] + first[2]) / 2 : fb[2]) : fb[0];
+        const oy = lay.vertical ? fb[1] : (first ? first[1] + lay.asc : fb[1] + lay.asc);
+        t.matrix = M.round(M.then(M.t(ox, oy), t.matrix));
+        delete t.text_kind; delete t.frame;
+      } else {
+        const b = lay.bbox, pad = t.size * 0.5;
+        t.frame = [rectSp(0, 0, b[2] - b[0] + pad, b[3] - b[1] + pad * 0.5)];
+        t.matrix = M.round(M.then(M.t(b[0], b[1]), t.matrix));
+        t.text_kind = 'area';
+      }
+      delete t._lay;
+      this.doc.touch();
+    });
+    this.panels.refresh();
   }
 
   // ---- 操作 ------------------------------------------------------------------------
@@ -378,6 +385,32 @@ class App {
       this.doc.touch();
     });
   }
+  transformSel(m, label = '変形', scaleStrokes = false) {
+    const s = this.need(); if (!s) return;
+    this.doc.edit(label, () => { for (const it of topLevel(this.doc, s)) itemTransform(it, m, scaleStrokes); this.doc.touch(); });
+    this.view.request();
+  }
+  /** 選んでいる物の塗り（か線）をグラデーションに（今の色 → 白か黒、外枠の左から右へ）。p0・p1 を渡すとその向きに */
+  makeGradient(p0, p1, merge = null) {
+    const leaves = this.panels.styledLeaves(), t = this.colorTarget;
+    if (!leaves.length) { toast('先に選んでください'); return false; }
+    const cm = this.doc.data.color_mode === 'cmyk';
+    this.doc.edit('グラデーション', () => {
+      for (const it of leaves) {
+        const cur = it.style[t], b = itemBBox(it) || [0, 0, 100, 100], cy = (b[1] + b[3]) / 2;
+        const light = cur && !isGradient(cur) && colorRGB(cur).reduce((x, y) => x + y) > 2.4;
+        const g = isGradient(cur) ? cur : { type: 'gradient', kind: 'linear', p0: [b[0], cy], p1: [b[2], cy],
+          stops: [[0, cur ? { ...cur, v: [...cur.v] } : hexColor('#ffffff', cm), 1], [1, light || !cur ? hexColor('#000000', cm) : hexColor('#ffffff', cm), 1]] };
+        if (p0) { g.p0 = [...p0]; g.p1 = [...p1]; }
+        it.style[t] = g;
+        if (t === 'stroke' && !(it.style.width > 0)) it.style.width = 1;
+      }
+      this.doc.touch();
+    }, merge);
+    this.view.request();
+    this.panels.refreshSoon();
+    return true;
+  }
   nudge(dx, dy) {
     const s = this.selection(); if (!s.length) return;
     this.doc.edit('移動', () => { for (const it of topLevel(this.doc, s)) itemTransform(it, M.t(dx, dy)); this.doc.touch(); }, 'nudge');
@@ -405,6 +438,52 @@ class App {
       this.doc.touch();
     });
     this.select(s);
+  }
+
+  // ---- アートボード ------------------------------------------------------------------------
+  curAB() { this.curArtboard = Math.max(0, Math.min(this.curArtboard || 0, this.doc.artboards.length - 1)); return this.doc.artboards[this.curArtboard]; }
+  setArtboardField(k, v) {
+    const a = this.curAB(), u = PT_PER[this.doc.data.units] || 1;
+    if ((k === 'w' || k === 'h') && !(v > 0)) return;
+    this.doc.edit('アートボード', () => { a[k] = k === 'name' ? v : Math.round(v * u * 1e4) / 1e4; this.doc.touch(); }, 'ab-' + k);
+    this.panels.refresh();
+  }
+  setArtboardPreset(name) {
+    const [w, h, u] = PRESETS[name], a = this.curAB();
+    this.doc.edit('アートボードの大きさ', () => { a.w = Math.round(w * PT_PER[u] * 1e4) / 1e4; a.h = Math.round(h * PT_PER[u] * 1e4) / 1e4; this.doc.touch(); });
+    this.panels.refresh();
+  }
+  swapArtboard() { const a = this.curAB(); this.doc.edit('縦横の入れ替え', () => { [a.w, a.h] = [a.h, a.w]; this.doc.touch(); }); this.panels.refresh(); }
+  addArtboard() {
+    const abs = this.doc.artboards, last = abs[abs.length - 1];
+    const x = Math.max(...abs.map((a) => a.x + a.w)) + 40;
+    this.doc.edit('アートボードの追加', () => { abs.push({ name: `アートボード ${abs.length + 1}`, x, y: last.y, w: last.w, h: last.h }); this.doc.touch(); });
+    this.curArtboard = abs.length - 1;
+    this.view.fitArtboard(this.curArtboard);
+    this.panels.refresh();
+  }
+  deleteArtboard() {
+    const abs = this.doc.artboards;
+    if (abs.length <= 1) { toast('最後のアートボードは消せません'); return; }
+    const i = this.curArtboard || 0;
+    if (!confirm(`「${abs[i].name}」を削除しますか？（上の絵は残ります）`)) return;
+    this.doc.edit('アートボードの削除', () => { abs.splice(i, 1); this.doc.touch(); });
+    this.curArtboard = Math.max(0, i - 1);
+    this.panels.refresh();
+  }
+  moveArtboard(d) {
+    const abs = this.doc.artboards, i = this.curArtboard || 0, j = i + d;
+    if (j < 0 || j >= abs.length) return;
+    this.doc.edit('アートボードの順番', () => { [abs[i], abs[j]] = [abs[j], abs[i]]; this.doc.touch(); });
+    this.curArtboard = j;
+    this.panels.refresh();
+  }
+  fitArtboardTo(what) {
+    const b = what === 'sel' ? selectionBBox(this.selection(), true) : selectionBBox(this.doc.layers.flatMap((l) => l.children), true);
+    if (!b) { toast(what === 'sel' ? '先に選んでください' : '何も描いてありません'); return; }
+    const a = this.curAB();
+    this.doc.edit('アートボードを合わせる', () => { Object.assign(a, { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] }); this.doc.touch(); });
+    this.panels.refresh();
   }
 
   // ---- 画像・書き出し ------------------------------------------------------------------------
@@ -585,6 +664,8 @@ class App {
     const ta = $('#textedit');
     ta.addEventListener('input', () => this.onTextInput());
     ta.addEventListener('keydown', (e) => { if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) { e.preventDefault(); this.endTextEdit(); } });
+    $('#text-done').onclick = () => this.endTextEdit();
+    document.addEventListener('selectionchange', () => { if (this.editing && document.activeElement === ta) { this.view.request(); this.panels.refreshSoon(); } });
     $('#cv').addEventListener('pointerdown', () => { if (this.editing && this.toolName !== 'text') this.endTextEdit(); }, true);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') this.saveNow(); });
     window.addEventListener('pagehide', () => this.saveNow());
@@ -624,7 +705,8 @@ class App {
       if (k === 'enter' && this.toolName === 'pen') return run(() => this.tools.pen.finish());
       const arrows = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
       if (arrows[k]) { const s = e.shiftKey ? 10 : 1; return run(() => this.nudge(arrows[k][0] * s, arrows[k][1] * s)); }
-      const keys = { v: 'select', a: 'direct', p: 'pen', n: 'pencil', m: 'rect', l: 'ellipse', t: 'text', i: 'eyedropper', h: 'hand', '\\': 'line' };
+      if (k === 'o' && e.shiftKey) return run(() => this.setTool('artboard'));
+      const keys = { v: 'select', a: 'direct', p: 'pen', n: 'pencil', m: 'rect', l: 'ellipse', t: 'text', i: 'eyedropper', h: 'hand', g: 'gradient', '\\': 'line' };
       if (keys[k]) return run(() => this.setTool(keys[k]));
       if (k === 'x') return run(() => this.panels.setTarget(this.colorTarget === 'fill' ? 'stroke' : 'fill'));
       if (k === 'd') return run(() => { this.colorTarget = 'fill'; this.panels.setColor(hexColor('#ffffff', this.doc.data.color_mode === 'cmyk')); this.colorTarget = 'stroke'; this.panels.setColor(hexColor('#000000', this.doc.data.color_mode === 'cmyk')); this.colorTarget = 'fill'; this.panels.refresh(); });

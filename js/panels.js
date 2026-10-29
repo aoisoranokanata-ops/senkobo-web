@@ -16,10 +16,12 @@ const ICON = {
   line: '<path d="M5 19L19 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
   text: '<path d="M5 5h14M12 5v14M9 19h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
   eyedropper: '<path d="M14.5 4.5l5 5-2 2-1-1-7 7H6v-3.5l7-7-1-1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  gradient: '<defs><linearGradient id="ig" x1="0" x2="1"><stop offset="0" stop-color="currentColor"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs><rect x="3.5" y="5.5" width="17" height="13" rx="1.5" fill="url(#ig)" stroke="currentColor" stroke-width="1.4"/>',
+  artboard: '<path d="M7 3v18M17 3v18M3 7h18M3 17h18" stroke="currentColor" stroke-width="1.6" fill="none"/>',
   hand: '<path d="M8 12V6.5a1.5 1.5 0 013 0V11m0-5.5V5a1.5 1.5 0 013 0v6m0-4.5a1.5 1.5 0 013 0V14a7 7 0 01-7 7h-.6a6 6 0 01-4.9-2.6L4 15a1.6 1.6 0 012.6-1.8L8 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 const TOOL_ORDER = [['select', 'V'], ['direct', 'A'], ['pen', 'P'], ['pencil', 'N'], ['rect', 'M'], ['roundrect', ''], ['ellipse', 'L'],
-  ['polygon', ''], ['star', ''], ['line', '\\'], ['text', 'T'], ['eyedropper', 'I'], ['hand', 'H']];
+  ['polygon', ''], ['star', ''], ['line', '\\'], ['text', 'T'], ['gradient', 'G'], ['eyedropper', 'I'], ['artboard', 'Shift+O'], ['hand', 'H']];
 const FONTS = [['Yu Gothic', '游ゴシック（ヒラギノ角ゴ）'], ['Yu Mincho', '游明朝（ヒラギノ明朝）'], ['Meiryo', 'メイリオ'],
   ['BIZ UDPGothic', 'BIZ UDP ゴシック'], ['Noto Sans JP', 'Noto Sans JP'], ['Noto Serif JP', 'Noto Serif JP'],
   ['Hiragino Maru Gothic ProN', 'ヒラギノ丸ゴ'], ['Arial', 'Arial'], ['Helvetica', 'Helvetica'], ['Georgia', 'Georgia'],
@@ -48,6 +50,7 @@ class Panels {
     this.buildToolbar();
     this.buildProps();
     this.buildLayers();
+    this.buildArtboards();
     $$('#panel .tabs button').forEach((b) => b.addEventListener('click', () => this.tab(b.dataset.tab)));
     this.tab(app.settings.panelTab || 'prop');
   }
@@ -68,6 +71,7 @@ class Panels {
     this.refreshToolbar();
     this.refreshProps();
     if (!$('#page-layers').hidden) this.refreshLayers();
+    if (!$('#page-artboards').hidden) this.refreshArtboards();
     $('#b-undo').disabled = !this.doc.undoStack.length;
     $('#b-redo').disabled = !this.doc.redoStack.length;
   }
@@ -122,6 +126,8 @@ class Panels {
     if (t === 'roundrect') bar.append(num('角の半径（pt）', 'cornerRadius', 12, 0, 1000, 1));
     if (t === 'polygon') bar.append(num('辺の数', 'sides', 6, 3, 60, 1), toggle('まっすぐ立てる', 'keepRatio'));
     if (t === 'star') bar.append(num('点の数', 'points', 5, 2, 60, 1), num('内側の比率', 'starRatio', 0.5, 0.05, 0.95, 0.05), toggle('まっすぐ立てる', 'keepRatio'));
+    if (t === 'gradient') bar.append(h('span', { class: 'opt-hint' }, `選んだ物の${app.colorTarget === 'fill' ? '塗り' : '線'}に、引っぱった向きでかける（Shift で 45° ごと）`));
+    if (t === 'artboard') bar.append(toggle('上の絵も一緒に動かす', 'abMoveArt'), h('span', { class: 'opt-hint' }, '押して選ぶ・つかんで動かす・角や辺で大きさ'));
     if (t === 'line') bar.append(h('span', { class: 'opt-hint' }, 'Shift で 45° ごと'));
     if (t === 'text') {
       const cur = this.selText();
@@ -137,33 +143,19 @@ class Panels {
           onchange: (e) => this.setTextAttr('vertical', e.target.checked) }), '縦書き'),
         h('select', { onchange: (e) => this.setTextAttr('align', e.target.value) },
           [['left', '左揃え'], ['center', '中央揃え'], ['right', '右揃え']].map(([v, l]) => h('option', { value: v, selected: (cur ? cur.align || 'left' : 'left') === v }, l))));
+      bar.append(toggle('パスの線を押すとパスに沿わせる', 'textOnShapes'));
       bar.append(h('span', { class: 'opt-hint' }, '押すと 1 行、引っぱると枠の中で折り返す'));
     }
     bar.append(h('span', { class: 'sp' }), toggle('スナップ', 'snap'));
   }
   selText() { return this.app.selection().find((x) => x.kind === 'text') || null; }
-  setTextAttr(k, v) {
-    const app = this.app, S = app.settings;
-    const map = { font: 'font', size: 'fontSize', font_style: 'fontStyle', vertical: 'vertical' };
-    if (map[k]) { S[map[k]] = v; app.saveSettings(); }
-    const texts = [];
-    for (const it of app.selection()) for (const x of this.doc.iterTree([it])) if (x.kind === 'text') texts.push(x);
-    if (!texts.length) return;
-    this.doc.edit('文字の設定', () => {
-      for (const t of texts) { if (v === '' || v === false || (k === 'align' && v === 'left')) delete t[k]; else t[k] = v; delete t._lay; }
-      this.doc.touch();
-    }, 'text-' + k);
-    app.layoutTextEdit();
-  }
 
   // ---- プロパティ ------------------------------------------------------------------------
   buildProps() {
     const pg = $('#page-prop'), app = this.app;
     const sec = (title, ...kids) => h('section', { class: 'sec' }, h('h3', {}, title), ...kids);
     this.info = h('div', { class: 'sel-info' });
-    const xywh = h('div', { class: 'xywh' }, ['X', 'Y', 'W', 'H'].map((k) => h('label', {}, k,
-      h('input', { type: 'number', step: 'any', inputmode: 'decimal', 'data-k': k, onchange: (e) => this.setXYWH(k, parseFloat(e.target.value)) }))));
-    this.xywh = xywh;
+    this.tfBox = this.buildTransform();
     // 塗りと線
     this.chipFill = h('button', { class: 'chip big', onclick: () => this.setTarget('fill') });
     this.chipStroke = h('button', { class: 'chip big stroke', onclick: () => this.setTarget('stroke') });
@@ -177,6 +169,7 @@ class Panels {
       h('div', { class: 'color-tools' },
         h('button', { title: 'なし', class: 'mini', onclick: () => this.setColor(null) }, 'なし'),
         h('button', { title: '塗りと線を入れ替え', class: 'mini', onclick: () => this.swapFS() }, '⇄'),
+        this.buildGradientBtn(),
         h('div', { class: 'color-pick' }, this.colorIn, this.hexIn)));
     this.swatches = h('div', { class: 'swatches' });
     // 線
@@ -192,17 +185,20 @@ class Panels {
     this.blendSel = h('select', { onchange: (e) => this.setItemAttr('blend', e.target.value) }, BLEND_MODES.map(([v, l]) => h('option', { value: v }, l)));
     const act = (label, fn, title) => h('button', { class: 'act', title: title || label, onclick: fn }, label);
     pg.append(
-      sec('選択', this.info, xywh),
-      sec('塗りと線', colorRow, this.cmyk, this.swatches,
+      sec('選択', this.info, this.tfBox),
+      (this.textSec = sec('文字', this.buildText())),
+      sec('塗りと線', colorRow, this.buildGradient(), this.cmyk, this.swatches,
         h('div', { class: 'row' }, act('＋ スウォッチに追加', () => this.addSwatch()))),
       sec('線',
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '線幅'), this.widthRange, this.widthNum, h('span', { class: 'unit' }, 'pt')),
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '線端'), seg('cap', [['butt', 'なし'], ['round', '丸'], ['square', '突出']])),
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '角'), seg('join', [['miter', 'マイター'], ['round', 'ラウンド'], ['bevel', 'ベベル']])),
         h('div', { class: 'row' }, h('label', { class: 'lbl' }, this.dashOn, '破線'), h('span', { class: 'mini-lbl' }, '線'), this.dashA, h('span', { class: 'mini-lbl' }, '間隔'), this.dashB)),
+      sec('縁取り（袋文字）', this.buildRims()),
       sec('見た目',
         h('div', { class: 'row' }, h('span', { class: 'lbl' }, '不透明度'), this.opRange, this.opOut),
-        h('div', { class: 'row' }, h('span', { class: 'lbl' }, '描画モード'), this.blendSel)),
+        h('div', { class: 'row' }, h('span', { class: 'lbl' }, '描画モード'), this.blendSel),
+        this.buildEffects()),
       sec('並べる',
         h('div', { class: 'grid3' }, ALIGN_BTNS.map(([k, l]) => act(l, () => app.align(k), l + '揃え'))),
         h('div', { class: 'grid2' }, act('横に等間隔', () => app.distribute('h')), act('縦に等間隔', () => app.distribute('v'))),
@@ -236,6 +232,7 @@ class Panels {
   setTarget(t) { this.app.colorTarget = t; this.refresh(); }
   setColor(c) {
     const t = this.app.colorTarget;
+    if (this.app.textRange()) { this.setTextAttr(t, c ? { ...c, v: [...c.v] } : null, true); return; }
     this.editStyles(t === 'fill' ? '塗り' : '線の色', (st, it) => {
       st[t] = c ? { ...c, v: [...c.v] } : null;
       if (t === 'stroke' && c && !(st.width > 0) && it) st.width = 1;
@@ -268,35 +265,17 @@ class Panels {
     this.doc.edit('スウォッチの追加', () => { this.doc.data.swatches.push({ ...p, v: [...p.v] }); });
     this.refresh();
   }
-  setXYWH(k, v) {
-    if (!Number.isFinite(v)) return;
-    const app = this.app, sel = app.selection(), u = PT_PER[this.doc.data.units] || 1;
-    const b = selectionBBox(sel);
-    if (!b) return;
-    v *= u;
-    const w = b[2] - b[0], hh = b[3] - b[1];
-    let m;
-    if (k === 'X') m = M.t(v - b[0], 0);
-    else if (k === 'Y') m = M.t(0, v - b[1]);
-    else if (k === 'W') { if (w < 1e-6 || v <= 0) return; const s = v / w; m = app.settings.keepRatio ? M.s(s, s, b[0], b[1]) : M.s(s, 1, b[0], b[1]); }
-    else { if (hh < 1e-6 || v <= 0) return; const s = v / hh; m = app.settings.keepRatio ? M.s(s, s, b[0], b[1]) : M.s(1, s, b[0], b[1]); }
-    this.doc.edit('変形', () => { for (const it of topLevel(this.doc, sel)) itemTransform(it, m, (k === 'W' || k === 'H') && app.settings.scaleStrokes); this.doc.touch(); });
-    app.view.request();
-    this.refresh();
-  }
   refreshProps() {
     if ($('#page-prop').hidden) return;
     const app = this.app, doc = this.doc, sel = app.selection();
     const active = document.activeElement;
     const set = (el, v) => { if (el !== active) el.value = v; };
     this.info.textContent = sel.length === 0 ? '選択なし（色は次に描く物に使います）' : sel.length === 1 ? itemLabel(sel[0]) : `${sel.length} 個を選択`;
-    const b = sel.length ? selectionBBox(sel) : null, u = PT_PER[doc.data.units] || 1;
-    this.xywh.hidden = !b;
-    if (b) {
-      const vals = { X: b[0], Y: b[1], W: b[2] - b[0], H: b[3] - b[1] };
-      $$('input', this.xywh).forEach((inp) => set(inp, +(vals[inp.dataset.k] / u).toFixed(2)));
-      $$('label', this.xywh).forEach((l) => { l.dataset.unit = doc.data.units; });
-    }
+    this.refreshTransform(sel);
+    this.refreshText();
+    this.refreshGradient();
+    this.refreshRims();
+    this.refreshEffects();
     const st = this.shownStyle(), t = app.colorTarget;
     this.paintChip(this.chipFill, st.fill);
     this.paintChip(this.chipStroke, st.stroke);
