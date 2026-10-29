@@ -75,10 +75,11 @@ function variableStroke(sp, width, profile, cap = 'round') {
 }
 /** render.js が呼ぶ（st.profile がある線）。形が変わらなければ覚えておく */
 function variableOutline(it) {
+  if (it._vo && it._vo.e === GEO_EPOCH) return it._vo.sps;
   const st = it.style, key = JSON.stringify([st.width, st.profile, st.cap, it.paths.map((s) => [s.c, s.n.map((n) => [n.x, n.y, n.ix, n.iy, n.ox, n.oy])])]);
-  if (it._vo && it._vo.key === key) return it._vo.sps;
+  if (it._vo && it._vo.key === key) { it._vo.e = GEO_EPOCH; return it._vo.sps; }
   const sps = it.paths.flatMap((sp) => variableStroke(sp, st.width, st.profile, st.cap || 'butt'));      // exe の Style.cap の既定は butt
-  it._vo = { key, sps };
+  it._vo = { e: GEO_EPOCH, key, sps };
   return sps;
 }
 /** パスの上で (x, y) に一番近い所: [長さの割合 t, 距離, 点, 向き] */

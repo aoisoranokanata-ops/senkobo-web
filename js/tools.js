@@ -71,10 +71,7 @@ class SelectTool {
       if (Math.hypot(lp.x - sx, lp.y - sy) < moveThreshold(st.e0)) return;
       st.moved = true;
     }
-    const doc = this.doc;
     if (st.mode === 'marquee') { st.x1 = x; st.y1 = y; view.request(); return; }
-    st.items.forEach((it, i) => loadInto(it, st.saved[i]));
-    doc.touch();
     let m;
     if (st.mode === 'move') {
       let dx = x - st.x0, dy = y - st.y0;
@@ -100,10 +97,9 @@ class SelectTool {
       st.deg = deg;
       m = M.r(deg, cx, cy);
     }
-    for (const it of st.items) itemTransform(it, m, st.mode === 'scale' && this.app.settings.scaleStrokes);
-    doc.touch();
+    st.m = m;
+    this.app.renderer.preview = { ids: new Set(topLevel(this.doc, st.items).map((i) => i.id)), m };
     view.request();
-    this.app.panels.refreshSoon();
   }
   up() {
     const st = this.st;
@@ -119,10 +115,13 @@ class SelectTool {
       app.view.request();
       return;
     }
-    if (!st.moved && !st.alt) doc.cancel(); else doc.commit();
+    app.renderer.preview = null;
+    if (st.m) for (const it of topLevel(doc, st.items)) itemTransform(it, st.m, st.mode === 'scale' && app.settings.scaleStrokes);
+    if (!st.moved && !st.alt) doc.cancel(); else { doc.touch(); doc.commit(); }
     app.view.snapMark = null;
+    app.panels.refresh();
   }
-  cancel() { if (this.st && this.st.mode !== 'marquee') this.doc.cancel(); this.st = null; }
+  cancel() { this.app.renderer.preview = null; if (this.st && this.st.mode !== 'marquee') this.doc.cancel(); this.st = null; }
   hover(x, y) { const h = this.app.view.hitTop(x, y); if (h !== this.app.view.hover) { this.app.view.hover = h; this.app.view.request(); } }
   dbl(x, y) {
     const leaf = this.app.view.hitLeaf(x, y);
@@ -525,7 +524,7 @@ class TextTool {
     let onPath = null;
     if (hit && hit.kind === 'path' && this.app.settings.textOnShapes !== false && hit.paths.length) {
       _hitCtx.lineWidth = 2 * this.app.view.tol(this.app.touchy ? 10 : 6);
-      if (_hitCtx.isPointInStroke(spsPath2D(hit.paths), x, y)) onPath = hit;
+      if (_hitCtx.isPointInStroke(itemPath2D(hit), x, y)) onPath = hit;
     }
     this.st = { x0: x, y0: y, x1: x, y1: y, hit: hit && hit.kind === 'text' ? hit : null, onPath, moved: false, e0: e };
   }

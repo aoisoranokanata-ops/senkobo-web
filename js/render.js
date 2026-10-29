@@ -111,6 +111,13 @@ class Renderer {
 
   drawItem(ctx, it, alpha) {
     if (it.visible === false) return;
+    const pv = this.preview;
+    if (pv && pv.ids.has(it.id)) {
+      this.preview = null;
+      ctx.save(); ctx.transform(...pv.m);
+      try { this.drawItem(ctx, it, alpha); } finally { ctx.restore(); this.preview = pv; }
+      return;
+    }
     const a = alpha * (it.opacity ?? 1);
     if (a <= 0.001 && !this.outline) return;
     const blend = it.blend && it.blend !== 'normal' && !this.outline && COMP_OK.has(it.blend) ? it.blend : null;
@@ -227,7 +234,7 @@ class Renderer {
   }
   drawPath(ctx, it, a) {
     if (!it.paths.length) return;
-    const p = spsPath2D(it.paths), st = it.style;
+    const p = itemPath2D(it), st = it.style;
     if (this.outline) { ctx.strokeStyle = '#000'; ctx.lineWidth = 1 / M.scale(toArr(ctx.getTransform())); ctx.setLineDash([]); ctx.stroke(p); return; }
     for (const e of (st.extra || []).slice().reverse()) {
       if (!e.paint || !(e.width > 0)) continue;
@@ -290,7 +297,7 @@ class Renderer {
   /** 文書座標での形（クリップ・当たり判定用） */
   shapeOf(it) {
     const p = new Path2D();
-    if (it.kind === 'path') p.addPath(spsPath2D(it.paths));
+    if (it.kind === 'path') p.addPath(itemPath2D(it));
     else if (it.kind === 'text' || it.kind === 'image') {
       const b = it.kind === 'text' ? textLocalBBox(it) : [0, 0, it.pw, it.ph];
       if (b) { const r = new Path2D(); r.rect(b[0], b[1], b[2] - b[0], b[3] - b[1]); p.addPath(r, new DOMMatrix(it.matrix)); }

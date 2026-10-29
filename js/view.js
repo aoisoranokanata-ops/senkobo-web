@@ -233,7 +233,7 @@ class View {
   hitItem(it, x, y, tol) {
     if (it.kind === 'path') {
       if (!it.paths.length) return false;
-      const p = spsPath2D(it.paths);
+      const p = itemPath2D(it);
       if (it.style.fill && _hitCtx.isPointInPath(p, x, y, it.fill_rule === 'evenodd' ? 'evenodd' : 'nonzero')) return true;
       _hitCtx.lineWidth = (it.style.stroke ? it.style.width : 0) + 2 * tol;
       return _hitCtx.isPointInStroke(p, x, y);
@@ -360,6 +360,12 @@ class View {
     ctx.lineWidth = 1;
   }
   outlinePath(it) {
+    if (it._op && it._op.e === GEO_EPOCH) return it._op.p;
+    const p = this._outlinePath(it);
+    it._op = { e: GEO_EPOCH, p };
+    return p;
+  }
+  _outlinePath(it) {
     // 選択の表示用（文書座標の Path2D）
     if (it.kind === 'text' && it.frame && it.frame.length && (it.text_kind || 'point') !== 'point') {
       const p = new Path2D();
@@ -382,19 +388,21 @@ class View {
   paintSelection(ctx) {
     const app = this.app, sel = app.selection();
     const d = this.dpr, vm = new DOMMatrix([this.zoom, 0, 0, this.zoom, this.ox, this.oy]);
-    const strokeDoc = (path, color, w = 1) => {
+    const pv = this.app.renderer.preview, pvm = pv ? new DOMMatrix([this.zoom, 0, 0, this.zoom, this.ox, this.oy]).multiply(new DOMMatrix(pv.m)) : null;
+    const strokeDoc = (path, color, w = 1, it = null) => {
       ctx.save(); ctx.setTransform(d, 0, 0, d, 0, 0);
-      const p = new Path2D(); p.addPath(path, vm);
+      const p = new Path2D(); p.addPath(path, pv && it && pv.ids.has(it.id) ? pvm : vm);
       ctx.strokeStyle = color; ctx.lineWidth = w; ctx.setLineDash([]); ctx.stroke(p); ctx.restore();
     };
     if (this.hover && !sel.includes(this.hover)) strokeDoc(this.outlinePath(this.hover), this.layerColor(this.hover), 2);
     if (!sel.length) return;
-    for (const it of sel) strokeDoc(this.outlinePath(it), this.layerColor(it), 1);
+    for (const it of sel) strokeDoc(this.outlinePath(it), this.layerColor(it), 1, it);
     const tool = app.tool;
     if (tool.showsAnchors || app.anchorSel.size) { this.paintAnchors(ctx, sel); return; }
     if (tool.showsBBox === false) return;
-    const b = selectionBBox(sel);
+    let b = selectionBBox(sel);
     if (!b) return;
+    if (pv) b = mapBBox(pv.m, b);
     const [x0, y0] = this.toScreen(b[0], b[1]), [x1, y1] = this.toScreen(b[2], b[3]);
     ctx.strokeStyle = this.layerColor(sel[0]);
     ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0);
@@ -451,6 +459,25 @@ class View {
   }
   layerColor(it) { const l = this.doc.layerOf(it); return (l && l.color) || '#4f7cff'; }
 
+  /** 吸着する点（錨点・外枠の中心）を升目に。形が変わるまで覚えておく。点ごとに、その物と親の id */
+  snapIndex() {
+    if (this._snapIdx && this._snapIdx.e === GEO_EPOCH && this._snapIdx.doc === this.doc) return this._snapIdx;
+    const cs = 24, grid = new Map(), doc = this.doc;
+    const add = (x, y, ids) => { const k = Math.floor(x / cs) + ',' + Math.floor(y / cs); let l = grid.get(k); if (!l) grid.set(k, (l = [])); l.push([x, y, ids]); };
+    const walk = (arr, chain) => {
+      for (const it of arr) {
+        if (it.visible === false) continue;
+        const ids = it.kind === 'layer' ? chain : [...chain, it.id];
+        if (it.children) { walk(it.children, ids); continue; }
+        if (it.kind === 'path') for (const sp of it.paths) for (const n of sp.n) add(n.x, n.y, ids);
+        const b = itemBBox(it);
+        if (b) add((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, ids);
+      }
+    };
+    walk(doc.layers, []);
+    this._snapIdx = { e: GEO_EPOCH, doc, cs, grid };
+    return this._snapIdx;
+  }
   snap(x, y, exclude = new Set()) {
     this.snapMark = null;
     if (this.app.settings.snapGrid) { const g = this.gridSnap(x, y); this.snapMark = g; return g; }
@@ -459,14 +486,10 @@ class View {
     let best = null, bd = t;
     const consider = (sx, sy) => { const dd = Math.max(Math.abs(sx - x), Math.abs(sy - y)); if (dd <= bd) { bd = dd; best = [sx, sy]; } };
     for (const a of this.doc.artboards) for (const [sx, sy] of [[a.x, a.y], [a.x + a.w, a.y], [a.x, a.y + a.h], [a.x + a.w, a.y + a.h], [a.x + a.w / 2, a.y + a.h / 2], [a.x + a.w / 2, a.y], [a.x, a.y + a.h / 2], [a.x + a.w, a.y + a.h / 2], [a.x + a.w / 2, a.y + a.h]]) consider(sx, sy);
-    for (const it of this.doc.iterTree()) {
-      if (it.children || exclude.has(it.id) || !this.doc.isVisible(it)) continue;
-      let skip = false;
-      for (let p = this.doc.parentOf(it); p; p = this.doc.parentOf(p)) if (exclude.has(p.id)) skip = true;
-      if (skip) continue;
-      if (it.kind === 'path') for (const sp of it.paths) for (const n of sp.n) consider(n.x, n.y);
-      const b = itemBBox(it);
-      if (b) consider((b[0] + b[2]) / 2, (b[1] + b[3]) / 2);
+    const idx = this.snapIndex(), cs = idx.cs;
+    for (let gx = Math.floor((x - t) / cs); gx <= Math.floor((x + t) / cs); gx++) for (let gy = Math.floor((y - t) / cs); gy <= Math.floor((y + t) / cs); gy++) {
+      const l = idx.grid.get(gx + ',' + gy);
+      if (l) for (const [sx, sy, ids] of l) { if (ids.some((id) => exclude.has(id))) continue; consider(sx, sy); }
     }
     // ガイド: 縦のガイドには x、横のガイドには y をそろえる
     if (this.app.settings.showGuides) {

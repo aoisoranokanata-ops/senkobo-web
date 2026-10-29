@@ -181,6 +181,11 @@ function cmdsPath2D(cmds) {
   return p;
 }
 function spsPath2D(sps) { return cmdsPath2D(toCmds(sps)); }
+/** パスの物の Path2D（形が変わるまで覚えておく） */
+function itemPath2D(it) {
+  if (!it._p2 || it._p2.e !== GEO_EPOCH) it._p2 = { e: GEO_EPOCH, p: spsPath2D(it.paths) };
+  return it._p2.p;
+}
 
 // ---- 図形（exe の shape_subpaths と同じ）--------------------------------------------------
 function rectSp(x, y, w, h, r = 0) {

@@ -61,6 +61,13 @@ ICC・特色の分版（PDF の特色は名前だけ）。
   線幅ツール Shift+W・角を丸くする・再配色（キャンバスで見ながら）・バリエーション・アイコン一括書き出し（zip）・画像トレース・配色の提案）。
   メニューは上の「超える」。図形（長方形・多角形・スター）は選択の欄に「角の丸み」。可変幅の線は PDF・SVG・線のアウトラインでも輪郭の形。
   見本_対称と線幅も exe との絵の差 14.8 → 0.5。Web で作った対称・線幅の作品も exe で開いて保存し直しの差 0。
+- **フェーズ6 完了 → v1.0.0（2026-10-29）**。以降は使いながら改修。
+  速さ: GEO_EPOCH（Doc.touch で増える）が同じ間は Path2D（itemPath2D）・外枠・選択の輪郭・文字の組み・可変幅の輪郭・吸着の升目（View.snapIndex）を覚える。
+  選択ツールで動かしている間は物をさわらず renderer.preview（見た目だけの変形）、離したときに 1 回だけ itemTransform。
+  47,000 点の作品で 描く 10→1.2ms・全部選んで 35→2.3ms・ドラッグ 50→2.8ms・吸着 14→0ms。取り消しは合わせて 8000 万字まで。
+  iPad: 長押しの選択・吹き出しを止める・パネルに×・navigator.storage.persist()・［使い方とショートカット］。
+- **突き合わせを一度に**: `python tools/snk_check.py prepare` → 画面で `eval(await (await fetch('tools/selftest.js')).text())` →
+  `python tools/check_all.py`（.snk の往復・形の計算・PDF・Web で作った全部入りの作品を exe で開く。2026-10-29 すべて OK）。
 - Web で使えない物（dict には残るので exe で開けば元通り）: フォントの OpenType 機能（features・palt）（canvas の制約）。
 - 文字の組み: 字は 100px のフォントで描き、大きさ・位置は字の行列 g.m に入れる。runs の番号は exe と同じコードポイント（cpIndex/u16Index）。
   縦書きの約物はフォントの vert の代わりに、句読点を右上へずらす・括弧と長音を 90° 寝かせる（V_SHIFT / V_ROTATE）。

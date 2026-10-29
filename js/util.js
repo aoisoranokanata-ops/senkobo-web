@@ -1,8 +1,10 @@
 /* 線工房 Web — 共通の小道具: 行列・色・ZIP・ダウンロード */
 'use strict';
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '1.0.0';
 const LS = 'senkobo-web.';
+/** 形が変わるたびに増える数（Doc.touch で）。Path2D・外枠・文字の組みの覚えは、この数が同じ間だけ使う */
+let GEO_EPOCH = 0;
 const PT_PER = { mm: 72 / 25.4, pt: 1, px: 1, cm: 72 / 2.54, in: 72, Q: 72 / 25.4 / 4 };
 
 // ---- 行列 [a, b, c, d, e, f]（x' = a x + c y + e,  y' = b x + d y + f）------------------

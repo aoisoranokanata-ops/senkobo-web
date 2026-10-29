@@ -31,6 +31,8 @@ def main() -> int:
     bad = 0
     for f in sorted(S.FIX.glob("web_*.pdf")):
         name = f.stem[4:]
+        if not (S.FIX / f"exe_{name}.snk").exists():
+            continue                    # exe の見本の無い PDF は比べない
         data = f.read_bytes()
         fitz.TOOLS.mupdf_warnings()           # 前のを捨てる
         d = fitz.open(stream=data, filetype="pdf")

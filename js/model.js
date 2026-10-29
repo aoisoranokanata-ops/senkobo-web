@@ -92,7 +92,7 @@ class Doc {
   get layers() { return this.data.layers; }
   get artboards() { return this.data.artboards; }
   newId() { return this.data.next_id++; }
-  touch() { this.version++; }
+  touch() { this.version++; GEO_EPOCH++; }
 
   // ---- 探す
   *iterTree(items = this.data.layers) {
@@ -180,6 +180,8 @@ class Doc {
       if (!(this.pending.merge && last.key === this.pending.merge && now - last.t < 1500 && this.undoStack.length)) {
         this.undoStack.push({ label: this.pending.label, snap: this.pending.snap });
         if (this.undoStack.length > 150) this.undoStack.shift();
+        let total = this.undoStack.reduce((s, e) => s + e.snap.length, 0);
+        while (this.undoStack.length > 5 && total > 8e7) total -= this.undoStack.shift().snap.length;
       }
       this._lastMerge = { key: this.pending.merge, t: now };
       this.redoStack = [];
@@ -236,7 +238,7 @@ function itemLabel(it) {
 }
 function itemBBox(it) {
   if (it.visible === false) return null;
-  if (it.kind === 'path') return spsBBox(it.paths);
+  if (it.kind === 'path') { if (!it._bb || it._bb.e !== GEO_EPOCH) it._bb = { e: GEO_EPOCH, b: spsBBox(it.paths) }; return it._bb.b; }
   if (it.kind === 'text') {
     const b = textLocalBBox(it);
     return b ? mapBBox(it.matrix, b) : null;

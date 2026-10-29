@@ -137,7 +137,35 @@ class App {
     clearTimeout(this._saveT);
     this._saveT = setTimeout(() => this.saveNow(), 1500);
   }
+  /** 作品を消されにくくする（Safari は使っていないサイトのデータを消すことがある） */
+  async askPersist() {
+    if (this._persistAsked || !navigator.storage || !navigator.storage.persist) return;
+    this._persistAsked = true;
+    try { if (!(await navigator.storage.persisted())) await navigator.storage.persist(); } catch { /* 断られても動く */ }
+  }
+  async helpDialog() {
+    let usage = '';
+    try { const e = await navigator.storage.estimate(); usage = `この端末に保存している量: ${(e.usage / 1024 / 1024).toFixed(1)} MB` + (navigator.storage.persisted && (await navigator.storage.persisted()) ? '（消されにくい設定）' : ''); } catch { /* 分からなくてもよい */ }
+    const rows = (list) => h('table', {}, list.map(([a, b]) => h('tr', {}, h('td', {}, a), h('td', {}, b))));
+    const body = h('div', { class: 'help' },
+      h('p', {}, `線工房 Web v${APP_VERSION}。Windows 版の線工房と .snk で行き来できます。`),
+      h('h3', {}, 'iPad の操作'),
+      rows([['Apple Pencil', '描く・選ぶ（一度使うと、指は画面の移動になります）'], ['2 本指でつまむ・動かす', '拡大縮小・移動'], ['2 本指でトン', '取り消し'], ['3 本指でトン', 'やり直し'],
+        ['ダブルタップ', '文字を直す・パスの錨点を編集・錨点の角⇔なめらか・線幅の点を消す'], ['定規から引っぱる', 'ガイド（定規へ戻すと消える）'],
+        ['文字ツールでパスの線をタップ', '開いたパス → パスに沿う文字、閉じた形 → 形の中の文字']]),
+      h('h3', {}, 'キーボード（⌘ は Ctrl でも）'),
+      rows([['V / A / P / N', '選択・ダイレクト選択・ペン・鉛筆'], ['M / L / \\ / T', '長方形・楕円・直線・文字'], ['G / I / H', 'グラデーション・スポイト・手のひら'],
+        ['Shift+M / Shift+W / Shift+O', 'シェイプ形成・線幅・アートボード'], ['⌘Z / ⇧⌘Z', '取り消し・やり直し'], ['⌘C / ⌘X / ⌘V / ⌘D', 'コピー・カット・ペースト・複製'],
+        ['⌘G / ⇧⌘G', 'グループ・解除'], ['⌘] / ⌘[（⇧ で最前面・最背面）', '重ね順'], ['⌘8 / ⌘7', '複合パス・クリッピングマスク'], ['⇧⌘O', '文字のアウトライン'],
+        ['⌘R / ⌘; / ⌘\'', '定規・ガイド・グリッド'], ['⌘0 / ⌘1 / ⌘+ / ⌘-', '全体・100%・拡大・縮小'], ['⌘P', 'PDF 書き出し'], ['X / D / /', '塗りと線の入れ替え・白と黒・なし'],
+        ['矢印（⇧ で 10）', '少し動かす'], ['Space を押しながら', '画面の移動'], ['Delete', '削除'], ['Esc / Enter', '選択の解除・ペンを描き終える']]),
+      h('h3', {}, '作品の保存'),
+      h('p', {}, '作品はこのブラウザの中に自動で保存されます。Safari の「履歴とWebサイトデータを消去」で消えるので、大事な作品は［ファイル］→［.snk で保存］で「ファイル」アプリなどに書き出してください。'),
+      usage ? h('p', { class: 'note' }, usage) : null);
+    await this.modal('使い方とショートカット', body, [['閉じる', true, 'primary']]);
+  }
   async saveNow() {
+    this.askPersist();
     clearTimeout(this._saveT);
     const doc = this.doc;
     if (!doc || doc.inEdit()) { if (doc) this.scheduleSave(); return; }
@@ -699,7 +727,8 @@ class App {
         ['マージンにガイド…', () => this.marginGuidesDialog()], ['ガイドを消去', () => this.clearGuides()], null,
         ['グリッドを表示', () => this.toggleView('showGrid'), '', this.settings.showGrid],
         ['グリッドにスナップ', () => this.toggleView('snapGrid'), '', this.settings.snapGrid],
-        ['グリッドを前面に', () => this.toggleView('gridFront'), '', this.settings.gridFront],
+        ['グリッドを前面に', () => this.toggleView('gridFront'), '', this.settings.gridFront], null,
+        ['使い方とショートカット', () => this.helpDialog()],
       ],
     };
     void sel;
@@ -722,6 +751,8 @@ class App {
   bindUI() {
     $('#g-new').onclick = () => this.newDocDialog();
     $('#g-open').onclick = () => this.openFileFromGallery();
+    $('#g-help').onclick = () => this.helpDialog();
+    $('#panel-close').onclick = () => { this.settings.panelOpen = false; this.saveSettings(); this.applyPanelOpen(); };
     $('#g-ver').textContent = 'v' + APP_VERSION;
     $('#b-back').onclick = () => this.showGallery();
     $('#b-undo').onclick = () => this.undo();

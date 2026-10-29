@@ -10,7 +10,8 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
   font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
   overscroll-behavior: none; -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
-body { overflow: hidden; }
+body { overflow: hidden; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, select, [contenteditable] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
 input, select { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; min-height: 30px; }
@@ -234,3 +235,11 @@ label.stack input { width: 100%; }
 .harm-sw { flex: 1; height: 36px; border-radius: 6px; border: 1px solid rgba(255,255,255,.25); }
 .icon-sets { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
 .icon-sets label.check { font-size: 13px; margin-bottom: 4px; }
+
+/* ---- フェーズ6 ---- */
+.tabs-x { flex: 0 0 40px !important; font-size: 18px; color: var(--fg2); }
+.help h3 { font-size: 14px; margin: 14px 0 6px; color: var(--fg); }
+.help table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--fg); }
+.help td { padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.help td:first-child { white-space: nowrap; color: var(--fg2); width: 38%; }
+.help p { color: var(--fg); font-size: 13px; margin: 4px 0; }

@@ -146,8 +146,9 @@ function textKey(it) {
 function wordish(ch) { return /^[\x21-\x7e’]$/.test(ch) && !/[\s]/.test(ch) && /[A-Za-z0-9'’\-_.,!?;:)("]/.test(ch); }
 
 function textLayout(it) {
+  if (it._lay && it._lay.e === GEO_EPOCH) return it._lay;
   const key = textKey(it);
-  if (it._lay && it._lay.key === key) return it._lay;
+  if (it._lay && it._lay.key === key) { it._lay.e = GEO_EPOCH; return it._lay; }
   const chars = cps(it.text), n = chars.length;
   const kind = it.text_kind || 'point';
   const vertical = !!it.vertical && kind !== 'path';
@@ -375,7 +376,7 @@ function textLayout(it) {
   if (!bbox) bbox = warpBox || (lines.length ? [Math.min(...lines.map((l) => l[0])), Math.min(...lines.map((l) => l[1])), Math.max(...lines.map((l) => l[2])), Math.max(...lines.map((l) => l[3]))] : null);
   if (area) bbox = unionBBox([fbox, warpBox]);
   if (!bbox) bbox = vertical ? [-baseSize / 2, 0, baseSize / 2, baseSize] : [0, -ascR * baseSize, baseSize * 0.5, descR * baseSize];
-  it._lay = { key, glyphs, lines, vertical, bbox, size: baseSize, lh: lhFixed || baseSize * 1.5, asc: ascR * baseSize, desc: descR * baseSize, overflow, shown };
+  it._lay = { e: GEO_EPOCH, key, glyphs, lines, vertical, bbox, size: baseSize, lh: lhFixed || baseSize * 1.5, asc: ascR * baseSize, desc: descR * baseSize, overflow, shown };
   return it._lay;
 }
 function glyphsBBox(glyphs, ascR, descR) {
